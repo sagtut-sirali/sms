@@ -5,11 +5,13 @@ import {
   Home, 
   Laptop, 
   Plus, 
-  Upload, 
   RotateCcw,
   CheckCircle2,
   DollarSign,
-  FileSpreadsheet
+  Lock,
+  Unlock,
+  KeyRound,
+  ShieldCheck
 } from 'lucide-react';
 import { ActiveTab, TuitionMode } from '../types';
 
@@ -24,6 +26,9 @@ interface HeaderProps {
   onExportData?: () => void;
   onResetData: () => void;
   studentCounts: { total: number; home: number; online: number };
+  isLocked: boolean;
+  onToggleLock: () => void;
+  onOpenChangePin: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +42,9 @@ export const Header: React.FC<HeaderProps> = ({
   onExportData,
   onResetData,
   studentCounts,
+  isLocked,
+  onToggleLock,
+  onOpenChangePin,
 }) => {
   const tabs = [
     { id: 'overview', label: 'Dashboard' },
@@ -133,13 +141,47 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Record Fee</span>
             </button>
 
-            {/* Data options dropdown/buttons */}
+            {/* Lock / Security Controls */}
             <div className="flex items-center gap-1 border-l border-[#E0E4D9] pl-2">
+              {isLocked ? (
+                <button
+                  id="header-lock-toggle-btn"
+                  onClick={onToggleLock}
+                  title="Locked in View-Only mode. Click to enter PIN and unlock Admin Editing."
+                  className="inline-flex items-center gap-1.5 bg-[#FAF0E6] hover:bg-[#F3E5D4] text-[#8C5D39] border border-[#EBD6C3] font-medium text-xs px-2.5 py-1.5 rounded-xl transition cursor-pointer active:scale-95 shadow-xs"
+                >
+                  <Lock className="w-3.5 h-3.5 text-[#8C5D39]" />
+                  <span className="hidden sm:inline font-semibold">View Mode</span>
+                  <span className="text-[10px] bg-[#8C5D39] text-white font-bold px-1.5 py-0.5 rounded-md">Locked</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <button
+                    id="header-lock-toggle-btn"
+                    onClick={onToggleLock}
+                    title="Admin Mode active. Click to lock portal."
+                    className="inline-flex items-center gap-1.5 bg-[#EBF1E5] hover:bg-[#E2EBD9] text-[#3A4035] border border-[#CAD3C0] font-medium text-xs px-2.5 py-1.5 rounded-xl transition cursor-pointer active:scale-95 shadow-xs"
+                  >
+                    <Unlock className="w-3.5 h-3.5 text-[#4E6B3E]" />
+                    <span className="hidden sm:inline font-semibold">Admin Mode</span>
+                    <span className="text-[10px] bg-[#4E6B3E] text-white font-bold px-1.5 py-0.5 rounded-md">Unlocked</span>
+                  </button>
+                  <button
+                    id="header-change-pin-btn"
+                    onClick={onOpenChangePin}
+                    title="Change 4-Digit Master PIN"
+                    className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#F0F2EA] rounded-xl transition cursor-pointer"
+                  >
+                    <KeyRound className="w-4 h-4 text-[#5C6652]" />
+                  </button>
+                </div>
+              )}
+
               <button
                 id="header-reset-btn"
                 onClick={onResetData}
-                title="Reset sample records"
-                className="p-2 text-[#707969] hover:text-[#5C6652] hover:bg-[#F0F2EA] rounded-xl transition cursor-pointer"
+                title="Reset sample records (requires PIN)"
+                className="p-2 text-[#707969] hover:text-[#5C6652] hover:bg-[#F0F2EA] rounded-xl transition cursor-pointer ml-0.5"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>

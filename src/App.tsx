@@ -16,6 +16,10 @@ import {
   setStoredSyllabus, 
   getStoredFees, 
   setStoredFees,
+  getStoredMasterPin,
+  setStoredMasterPin,
+  getStoredIsLocked,
+  setStoredIsLocked,
   exportAllDataJSON,
   resetToInitialSampleData 
 } from './utils/storage';
@@ -33,6 +37,7 @@ import { RecordFeeModal } from './components/RecordFeeModal';
 import { AddTestModal } from './components/AddTestModal';
 import { FeeReceiptModal } from './components/FeeReceiptModal';
 import { ReportCardModal } from './components/ReportCardModal';
+import { PinAuthModal } from './components/PinAuthModal';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function App() {
@@ -44,6 +49,14 @@ export default function App() {
   const [testScores, setTestScores] = useState<TestScore[]>(() => getStoredTests());
   const [syllabus, setSyllabus] = useState<SubjectSyllabus[]>(() => getStoredSyllabus());
   const [fees, setFees] = useState<FeeRecord[]>(() => getStoredFees());
+
+  // Security Lock & PIN State (Guards editing & deleting on GitHub Pages / Client Side)
+  const [masterPin, setMasterPin] = useState<string>(() => getStoredMasterPin());
+  const [isLocked, setIsLocked] = useState<boolean>(() => getStoredIsLocked());
+  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+  const [pinModalMode, setPinModalMode] = useState<'unlock' | 'change_pin'>('unlock');
+  const [pinActionReason, setPinActionReason] = useState<string>('');
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   // Navigation & Filtering
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
@@ -109,6 +122,52 @@ export default function App() {
   }, [fees]);
 
   // Handlers for Students
+  const requireUnlock = (reason: string, action?: () => void): boolean => {
+    if (!isLocked) {
+      if (action) action();
+      return true;
+    }
+    setPinActionReason(reason);
+    setPinModalMode('unlock');
+    setPendingAction(() => action || null);
+    setIsPinModalOpen(true);
+    return false;
+  };
+
+  const handleUnlockSuccess = () => {
+    setIsLocked(false);
+    setStoredIsLocked(false);
+    showToast('Admin Mode Unlocked! Editing & deleting enabled.');
+    if (pendingAction) {
+      const actionToRun = pendingAction;
+      setPendingAction(null);
+      actionToRun();
+    }
+  };
+
+  const handleToggleLock = () => {
+    if (isLocked) {
+      requireUnlock('Unlock Admin Mode for full editing & deleting');
+    } else {
+      setIsLocked(true);
+      setStoredIsLocked(true);
+      showToast('Locked in View-Only Mode. Records are protected from editing.');
+    }
+  };
+
+  const handleOpenChangePin = () => {
+    setPinModalMode('change_pin');
+    setIsPinModalOpen(true);
+  };
+
+  const handleUpdateMasterPin = (newPin: string) => {
+    setMasterPin(newPin);
+    setStoredMasterPin(newPin);
+    setIsLocked(false);
+    setStoredIsLocked(false);
+    showToast('Master PIN updated successfully! Admin Mode unlocked.');
+  };
+
   const handleSaveStudent = (savedStudent: Student) => {
     const exists = students.some(s => s.id === savedStudent.id);
     let updated: Student[];
@@ -130,46 +189,69 @@ export default function App() {
   const handleDeleteStudent = (studentId: string) => {
     const student = students.find(s => s.id === studentId);
     if (!student) return;
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Remove Student',
-      message: `Are you sure you want to remove ${student.name} from Sir Ali Preparations?`,
-      onConfirm: () => {
-        setStudents(prev => prev.filter(s => s.id !== studentId));
-        showToast(`Removed ${student.name} from active roster.`);
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-      }
+    requireUnlock(`Enter PIN to delete student: ${student.name}`, () => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Remove Student',
+        message: `Are you sure you want to permanently remove ${student.name} from Sir Ali Preparations?`,
+        onConfirm: () => {
+          setStudents(prev => prev.filter(s => s.id !== studentId));
+          showToast(`Removed ${student.name} from active roster.`);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      });
     });
   };
 
   const handleEditStudent = (student: Student) => {
-    setStudentToEdit(student);
-    setIsAddStudentOpen(true);
-    setSelectedDetailStudent(null);
+    requireUnlock(`Enter PIN to edit profile for ${student.name}`, () => {
+      setStudentToEdit(student);
+      setIsAddStudentOpen(true);
+      setSelectedDetailStudent(null);
+    });
   };
 
   // Handlers for Quick Attendance
   const handleQuickMarkAttendance = (studentId: string, status: 'present' | 'absent') => {
-    const existingIndex = attendance.findIndex(a => a.studentId === studentId && a.date === todayDate);
-    let updated = [...attendance];
+    const perform = () => {
+      const existingIndex = attendance.findIndex(a => a.studentId === studentId && a.date === todayDate);
+      let updated = [...attendance];
 
-    if (existingIndex >= 0) {
-      updated[existingIndex] = {
-        ...updated[existingIndex],
-        status,
-      };
-    } else {
-      updated.push({
-        id: `att-${Date.now()}-${studentId}`,
-        studentId,
-        date: todayDate,
-        status,
-      });
-    }
+      if (existingIndex >= 0) {
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          status,
+        };
+      } else {
+        updated.push({
+          id: `att-${Date.now()}-${studentId}`,
+          studentId,
+          date: todayDate,
+          status,
+        });
+      }
 
-    setAttendance(updated);
-    const student = students.find(s => s.id === studentId);
-    showToast(`Marked ${student?.name || 'Student'} as ${status.toUpperCase()} for today.`);
+      setAttendance(updated);
+      const student = students.find(s => s.id === studentId);
+      showToast(`Marked ${student?.name || 'Student'} as ${status.toUpperCase()} for today.`);
+    };
+
+    requireUnlock('Enter PIN to mark student attendance', perform);
+  };
+
+  const handleUpdateAttendance = (newRecords: AttendanceRecord[]) => {
+    requireUnlock('Enter PIN to update attendance records', () => {
+      setAttendance(newRecords);
+      showToast('Attendance records saved.');
+    });
+  };
+
+  // Handlers for Syllabus
+  const handleUpdateSyllabus = (newSyllabus: SubjectSyllabus[]) => {
+    requireUnlock('Enter PIN to modify syllabus progress', () => {
+      setSyllabus(newSyllabus);
+      showToast('Syllabus progress updated.');
+    });
   };
 
   // Handlers for Fees
@@ -193,9 +275,11 @@ export default function App() {
   };
 
   const handleOpenRecordFee = (student?: Student, fee?: FeeRecord) => {
-    setPreSelectedFeeStudent(student || null);
-    setPreSelectedFee(fee || null);
-    setIsRecordFeeOpen(true);
+    requireUnlock('Enter PIN to record or edit fee payments', () => {
+      setPreSelectedFeeStudent(student || null);
+      setPreSelectedFee(fee || null);
+      setIsRecordFeeOpen(true);
+    });
   };
 
   const handleOpenReceiptModal = (student: Student, fee: FeeRecord) => {
@@ -210,9 +294,18 @@ export default function App() {
     showToast(`Logged test marks: ${savedTest.testTitle}`);
   };
 
+  const handleOpenAddTest = (student?: Student) => {
+    requireUnlock('Enter PIN to add new test marks', () => {
+      setPreSelectedTestStudent(student || null);
+      setIsAddTestOpen(true);
+    });
+  };
+
   const handleDeleteTest = (testId: string) => {
-    setTestScores(testScores.filter(t => t.id !== testId));
-    showToast('Deleted test record.');
+    requireUnlock('Enter PIN to delete test score record', () => {
+      setTestScores(testScores.filter(t => t.id !== testId));
+      showToast('Deleted test record.');
+    });
   };
 
   // Handlers for Report Cards
@@ -221,27 +314,23 @@ export default function App() {
     setIsReportCardOpen(true);
   };
 
-  // Export / Reset Handlers
-  const handleExportData = () => {
-    exportAllDataJSON();
-    showToast('Downloaded complete database backup JSON.');
-  };
-
   const handleResetData = () => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Reset Portal Data',
-      message: 'Reset database back to initial sample records for Sir Ali Preparations?',
-      onConfirm: () => {
-        resetToInitialSampleData();
-        setStudents(getStoredStudents());
-        setAttendance(getStoredAttendance());
-        setTestScores(getStoredTests());
-        setSyllabus(getStoredSyllabus());
-        setFees(getStoredFees());
-        showToast('Database reset to authentic initial sample data.');
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-      }
+    requireUnlock('Enter PIN to reset database to initial sample records', () => {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Reset Portal Data',
+        message: 'Reset database back to initial sample records for Sir Ali Preparations?',
+        onConfirm: () => {
+          resetToInitialSampleData();
+          setStudents(getStoredStudents());
+          setAttendance(getStoredAttendance());
+          setTestScores(getStoredTests());
+          setSyllabus(getStoredSyllabus());
+          setFees(getStoredFees());
+          showToast('Database reset to authentic initial sample data.');
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      });
     });
   };
 
@@ -270,17 +359,18 @@ export default function App() {
         selectedModeFilter={selectedModeFilter}
         setSelectedModeFilter={setSelectedModeFilter}
         onOpenAddStudent={() => {
-          setStudentToEdit(null);
-          setIsAddStudentOpen(true);
+          requireUnlock('Enter PIN to enroll new student', () => {
+            setStudentToEdit(null);
+            setIsAddStudentOpen(true);
+          });
         }}
         onOpenRecordFee={() => handleOpenRecordFee()}
-        onOpenAddTest={() => {
-          setPreSelectedTestStudent(null);
-          setIsAddTestOpen(true);
-        }}
-        onExportData={handleExportData}
+        onOpenAddTest={() => handleOpenAddTest()}
         onResetData={handleResetData}
         studentCounts={studentCounts}
+        isLocked={isLocked}
+        onToggleLock={handleToggleLock}
+        onOpenChangePin={handleOpenChangePin}
       />
 
       {/* Main Content Area */}
@@ -300,14 +390,13 @@ export default function App() {
             onQuickMarkAttendance={handleQuickMarkAttendance}
             onSelectStudent={(student) => setSelectedDetailStudent(student)}
             onOpenAddStudent={() => {
-              setStudentToEdit(null);
-              setIsAddStudentOpen(true);
+              requireUnlock('Enter PIN to enroll new student', () => {
+                setStudentToEdit(null);
+                setIsAddStudentOpen(true);
+              });
             }}
             onOpenRecordFee={() => handleOpenRecordFee()}
-            onOpenAddTest={() => {
-              setPreSelectedTestStudent(null);
-              setIsAddTestOpen(true);
-            }}
+            onOpenAddTest={() => handleOpenAddTest()}
           />
         )}
 
@@ -321,8 +410,10 @@ export default function App() {
             selectedModeFilter={selectedModeFilter}
             onSelectStudent={(student) => setSelectedDetailStudent(student)}
             onOpenAddStudent={() => {
-              setStudentToEdit(null);
-              setIsAddStudentOpen(true);
+              requireUnlock('Enter PIN to enroll new student', () => {
+                setStudentToEdit(null);
+                setIsAddStudentOpen(true);
+              });
             }}
             onEditStudent={handleEditStudent}
             onDeleteStudent={handleDeleteStudent}
@@ -337,7 +428,7 @@ export default function App() {
             students={students}
             attendance={attendance}
             selectedModeFilter={selectedModeFilter}
-            onUpdateAttendance={setAttendance}
+            onUpdateAttendance={handleUpdateAttendance}
             todayDate={todayDate}
           />
         )}
@@ -346,7 +437,7 @@ export default function App() {
         {activeTab === 'syllabus' && (
           <SyllabusTab
             syllabusList={syllabus}
-            onUpdateSyllabus={setSyllabus}
+            onUpdateSyllabus={handleUpdateSyllabus}
             todayDate={todayDate}
           />
         )}
@@ -358,10 +449,7 @@ export default function App() {
             testScores={testScores}
             attendance={attendance}
             syllabus={syllabus}
-            onOpenAddTest={() => {
-              setPreSelectedTestStudent(null);
-              setIsAddTestOpen(true);
-            }}
+            onOpenAddTest={() => handleOpenAddTest()}
             onDeleteTest={handleDeleteTest}
             onGenerateReportCard={handleGenerateReportCard}
           />
@@ -463,6 +551,20 @@ export default function App() {
         tests={testScores}
         attendance={attendance}
         syllabus={syllabus}
+      />
+
+      {/* Master PIN Authentication / Security Modal */}
+      <PinAuthModal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+          setIsPinModalOpen(false);
+          setPendingAction(null);
+        }}
+        onSuccess={handleUnlockSuccess}
+        masterPin={masterPin}
+        onUpdateMasterPin={handleUpdateMasterPin}
+        mode={pinModalMode}
+        actionReason={pinActionReason}
       />
 
       {/* In-App Confirmation Dialog */}

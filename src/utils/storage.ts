@@ -7,7 +7,11 @@ const KEYS = {
   TESTS: 'sir_ali_prep_tests_v1',
   SYLLABUS: 'sir_ali_prep_syllabus_v1',
   FEES: 'sir_ali_prep_fees_v1',
+  MASTER_PIN: 'sir_ali_prep_master_pin_v1',
+  IS_LOCKED: 'sir_ali_prep_is_locked_v1',
 };
+
+export const DEFAULT_MASTER_PIN = '1234';
 
 // In-memory fallback in case iframe blocks localStorage access
 const memoryCache: Record<string, string> = {};
@@ -134,3 +138,23 @@ export const resetToInitialSampleData = () => {
   setStoredSyllabus(INITIAL_SYLLABUS);
   setStoredFees(INITIAL_FEES);
 };
+
+export const getStoredMasterPin = (): string => {
+  const pin = safeGetItem(KEYS.MASTER_PIN);
+  return pin || DEFAULT_MASTER_PIN;
+};
+
+export const setStoredMasterPin = (newPin: string) => {
+  safeSetItem(KEYS.MASTER_PIN, newPin);
+};
+
+export const getStoredIsLocked = (): boolean => {
+  const raw = safeGetItem(KEYS.IS_LOCKED);
+  // Default to locked (true) to protect records on fresh visit
+  return raw === null ? true : raw === 'true';
+};
+
+export const setStoredIsLocked = (isLocked: boolean) => {
+  safeSetItem(KEYS.IS_LOCKED, isLocked ? 'true' : 'false');
+};
+
