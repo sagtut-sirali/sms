@@ -22,6 +22,7 @@ interface FeesTabProps {
   students: Student[];
   fees: FeeRecord[];
   selectedModeFilter: 'all' | TuitionMode;
+  isLocked?: boolean;
   onOpenRecordFee: (student?: Student, fee?: FeeRecord) => void;
   onOpenReceiptModal: (student: Student, fee: FeeRecord) => void;
 }
@@ -30,6 +31,7 @@ export const FeesTab: React.FC<FeesTabProps> = ({
   students,
   fees,
   selectedModeFilter,
+  isLocked = true,
   onOpenRecordFee,
   onOpenReceiptModal,
 }) => {
@@ -328,8 +330,8 @@ export const FeesTab: React.FC<FeesTabProps> = ({
                             <Receipt className="w-4 h-4" />
                           </button>
 
-                          {/* WhatsApp Reminder (If not paid) */}
-                          {fee.dueAmount > 0 && (
+                          {/* WhatsApp Reminder (Restricted: Visible ONLY when admin is logged in) */}
+                          {!isLocked && fee.dueAmount > 0 && (
                             <a
                               href={waReminderLink}
                               target="_blank"

@@ -19,10 +19,12 @@ import {
   Send,
   Calendar,
   Grid,
-  List
+  List,
+  Download
 } from 'lucide-react';
 import { Student, AttendanceRecord, TestScore, FeeRecord, TuitionMode } from '../types';
 import { formatCurrency, generateWhatsAppProgressReport } from '../utils/formatters';
+import { downloadStudentProgressTrackerPdf } from '../utils/pdfExport';
 
 interface StudentsTabProps {
   students: Student[];
@@ -306,6 +308,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance)}
+                      title="Download Progress Tracker PDF"
+                      className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => onGenerateReportCard(student)}
                       title="Generate Academic Report Card"
                       className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
@@ -400,6 +409,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance)}
+                          title="Download Progress Tracker PDF"
+                          className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => onGenerateReportCard(student)}
                           title="Report Card"

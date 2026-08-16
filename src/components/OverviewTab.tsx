@@ -27,6 +27,7 @@ interface OverviewTabProps {
   fees: FeeRecord[];
   todayDate: string;
   selectedModeFilter: 'all' | TuitionMode;
+  isLocked?: boolean;
   onNavigateTab: (tab: any) => void;
   onQuickMarkAttendance: (studentId: string, status: 'present' | 'absent') => void;
   onSelectStudent: (student: Student) => void;
@@ -43,6 +44,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   fees,
   todayDate,
   selectedModeFilter,
+  isLocked = true,
   onNavigateTab,
   onQuickMarkAttendance,
   onSelectStudent,
@@ -393,16 +395,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       </p>
                     </div>
 
-                    <a
-                      href={waLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-semibold px-2.5 py-1.5 rounded-xl transition shadow-xs whitespace-nowrap"
-                      title="Send WhatsApp Fee Reminder to Parent"
-                    >
-                      <Send className="w-3 h-3" />
-                      <span>Reminder</span>
-                    </a>
+                    {/* WhatsApp Reminder (Restricted: Visible ONLY when admin is logged in) */}
+                    {!isLocked && (
+                      <a
+                        href={waLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-semibold px-2.5 py-1.5 rounded-xl transition shadow-xs whitespace-nowrap"
+                        title="Send WhatsApp Fee Reminder to Parent"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>Reminder</span>
+                      </a>
+                    )}
                   </div>
                 );
               })

@@ -15,10 +15,12 @@ import {
   Laptop, 
   BookOpen,
   Clock,
-  Printer
+  Printer,
+  Download
 } from 'lucide-react';
 import { Student, AttendanceRecord, TestScore, FeeRecord, SubjectSyllabus } from '../types';
 import { formatCurrency, getGradeBadgeColor, generateWhatsAppProgressReport, generateWhatsAppFeeReminder } from '../utils/formatters';
+import { downloadStudentProgressTrackerPdf } from '../utils/pdfExport';
 
 interface StudentDetailModalProps {
   student: Student | null;
@@ -27,6 +29,7 @@ interface StudentDetailModalProps {
   testScores: TestScore[];
   fees: FeeRecord[];
   syllabus: SubjectSyllabus[];
+  isLocked?: boolean;
   onGenerateReportCard: (student: Student) => void;
   onRecordFee: (student: Student) => void;
   onEditStudent: (student: Student) => void;
@@ -39,11 +42,23 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   testScores,
   fees,
   syllabus,
+  isLocked = true,
   onGenerateReportCard,
   onRecordFee,
   onEditStudent,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'tests' | 'attendance' | 'fees'>('profile');
+
+  // Close modal on Escape key press
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && student) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [student, onClose]);
 
   if (!student) return null;
 
@@ -114,23 +129,36 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
 
             {/* Quick Actions in Header */}
             <div className="flex flex-wrap items-center gap-2">
-              <a
-                href={waProgressLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-[#5C6652] hover:bg-[#4E5745] text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                title="Send WhatsApp Progress Summary"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Parent Report</span>
-              </a>
               <button
+                id="student-detail-download-tracker-pdf-btn"
+                onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance, syllabus)}
+                className="bg-[#5C6652] hover:bg-[#4E5745] text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title="Download this student's Progress & Assessment Tracker as PDF"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Tracker (PDF)</span>
+              </button>
+
+              <button
+                id="student-detail-report-card-pdf-btn"
                 onClick={() => onGenerateReportCard(student)}
-                className="bg-[#2D3329]/60 hover:bg-[#2D3329] text-white text-xs font-semibold px-3 py-2 rounded-xl border border-[#5C6652] transition flex items-center gap-1.5 cursor-pointer"
+                className="bg-[#2D3329]/60 hover:bg-[#2D3329] text-white text-xs font-semibold px-3 py-2 rounded-xl border border-[#5C6652] transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="View & Download PDF Progress Report Card"
               >
                 <FileText className="w-3.5 h-3.5 text-[#CAD3C0]" />
                 <span>Report Card</span>
               </button>
+
+              <a
+                href={waProgressLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-white/10 hover:bg-white/20 text-[#CAD3C0] hover:text-white text-xs font-medium px-3 py-2 rounded-xl border border-white/20 transition flex items-center gap-1.5 cursor-pointer"
+                title="Send WhatsApp Progress Summary"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </a>
             </div>
           </div>
 
@@ -262,6 +290,14 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-[#2D3329] font-serif text-sm">Assessment & Examination Log</h4>
+                <button
+                  onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance, syllabus)}
+                  className="bg-[#F0F2EA] hover:bg-[#E0E4D9] text-[#2D3329] text-xs font-semibold px-3 py-1.5 rounded-xl border border-[#CAD3C0] transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="Download Student Progress & Assessment Tracker as PDF"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#5C6652]" />
+                  <span>Download Tracker PDF</span>
+                </button>
               </div>
 
               {studentTests.length === 0 ? (
@@ -384,12 +420,27 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                         )}
                       </div>
 
-                      <span className={`px-2.5 py-1 rounded-lg font-bold text-xs uppercase border ${
-                        f.status === 'paid' ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]' :
-                        f.status === 'overdue' ? 'bg-[#FCECEC] text-[#995353] border-[#E8C5C5]' : 'bg-[#FAF0E4] text-[#8C5D39] border-[#EAD5C3]'
-                      }`}>
-                        {f.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded-lg font-bold text-xs uppercase border ${
+                          f.status === 'paid' ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]' :
+                          f.status === 'overdue' ? 'bg-[#FCECEC] text-[#995353] border-[#E8C5C5]' : 'bg-[#FAF0E4] text-[#8C5D39] border-[#EAD5C3]'
+                        }`}>
+                          {f.status}
+                        </span>
+
+                        {/* WhatsApp Fee Reminder (Restricted: only when Admin is logged in) */}
+                        {!isLocked && f.dueAmount > 0 && (
+                          <a
+                            href={generateWhatsAppFeeReminder(student, f)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 text-[#5C6652] hover:text-[#3D4736] hover:bg-[#E9EDE0] rounded-lg transition inline-flex items-center"
+                            title="Send WhatsApp Fee Reminder"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

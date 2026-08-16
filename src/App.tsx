@@ -165,7 +165,7 @@ export default function App() {
     setStoredMasterPin(newPin);
     setIsLocked(false);
     setStoredIsLocked(false);
-    showToast('Master PIN updated successfully! Admin Mode unlocked.');
+    showToast('Master Security Password updated successfully! Admin Mode unlocked.');
   };
 
   const handleSaveStudent = (savedStudent: Student) => {
@@ -386,6 +386,7 @@ export default function App() {
             fees={fees}
             todayDate={todayDate}
             selectedModeFilter={selectedModeFilter}
+            isLocked={isLocked}
             onNavigateTab={setActiveTab}
             onQuickMarkAttendance={handleQuickMarkAttendance}
             onSelectStudent={(student) => setSelectedDetailStudent(student)}
@@ -461,6 +462,7 @@ export default function App() {
             students={students}
             fees={fees}
             selectedModeFilter={selectedModeFilter}
+            isLocked={isLocked}
             onOpenRecordFee={handleOpenRecordFee}
             onOpenReceiptModal={handleOpenReceiptModal}
           />
@@ -488,6 +490,7 @@ export default function App() {
         testScores={testScores}
         fees={fees}
         syllabus={syllabus}
+        isLocked={isLocked}
         onGenerateReportCard={handleGenerateReportCard}
         onRecordFee={(st) => {
           setSelectedDetailStudent(null);

@@ -169,7 +169,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     id="header-change-pin-btn"
                     onClick={onOpenChangePin}
-                    title="Change 4-Digit Master PIN"
+                    title="Change Master Password & Security Settings"
                     className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#F0F2EA] rounded-xl transition cursor-pointer"
                   >
                     <KeyRound className="w-4 h-4 text-[#5C6652]" />
