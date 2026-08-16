@@ -328,6 +328,20 @@ export default function App() {
     });
   };
 
+  const handleUpdateTestScores = (newScores: TestScore[]) => {
+    requireUnlock('Enter PIN to modify test score records', () => {
+      setTestScores(newScores);
+      showToast('Test scores updated.');
+    });
+  };
+
+  const handleUpdateFees = (newFees: FeeRecord[]) => {
+    requireUnlock('Enter PIN to modify fee records', () => {
+      setFees(newFees);
+      showToast('Fee ledger updated.');
+    });
+  };
+
   // Handlers for Report Cards
   const handleGenerateReportCard = (student: Student) => {
     setReportCardStudent(student);
@@ -451,6 +465,7 @@ export default function App() {
             selectedModeFilter={selectedModeFilter}
             onUpdateAttendance={handleUpdateAttendance}
             todayDate={todayDate}
+            onSelectStudent={(student) => setSelectedDetailStudent(student)}
           />
         )}
 
@@ -473,6 +488,7 @@ export default function App() {
             onOpenAddTest={() => handleOpenAddTest()}
             onDeleteTest={handleDeleteTest}
             onGenerateReportCard={handleGenerateReportCard}
+            onSelectStudent={(student) => setSelectedDetailStudent(student)}
           />
         )}
 
@@ -511,12 +527,19 @@ export default function App() {
         fees={fees}
         syllabus={syllabus}
         isLocked={isLocked}
+        todayDate={todayDate}
+        onUpdateAttendance={handleUpdateAttendance}
+        onUpdateTestScores={handleUpdateTestScores}
+        onUpdateSyllabus={handleUpdateSyllabus}
+        onUpdateFees={handleUpdateFees}
+        onEditStudent={handleEditStudent}
+        onDeleteStudent={handleDeleteStudent}
         onGenerateReportCard={handleGenerateReportCard}
         onRecordFee={(st) => {
           setSelectedDetailStudent(null);
           handleOpenRecordFee(st);
         }}
-        onEditStudent={handleEditStudent}
+        onOpenReceiptModal={handleOpenReceiptModal}
       />
 
       <AddStudentModal

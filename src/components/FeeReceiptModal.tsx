@@ -129,7 +129,7 @@ export const FeeReceiptModal: React.FC<FeeReceiptModalProps> = ({
               <div>
                 <h1 className="text-xl font-bold text-[#2D3329] tracking-tight font-serif">SIR ALI PREPARATIONS</h1>
                 <p className="text-xs text-[#5C6652] font-medium">Home & Online Tuitions • STEM Academic Coaching</p>
-                <p className="text-[10px] text-[#707969]">Contact: +92 300 1234567 • info@siralipreparations.edu</p>
+                <p className="text-[10px] text-[#707969]">Contact: +92 302 2324 503 • info@siralipreparations.edu</p>
               </div>
             </div>
 

@@ -184,7 +184,7 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
               <div>
                 <h1 className="text-2xl font-bold text-[#2D3329] tracking-tight font-serif">SIR ALI PREPARATIONS</h1>
                 <p className="text-xs text-[#5C6652] font-bold uppercase tracking-wider">Student Academic Progress & Assessment Report</p>
-                <p className="text-[11px] text-[#707969]">Home Tuitions & Online Live Coaching • Cell: +92 300 1234567</p>
+                <p className="text-[11px] text-[#707969]">Home Tuitions & Online Live Coaching • Cell: +92 302 2324 503</p>
               </div>
             </div>
 

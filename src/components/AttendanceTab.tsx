@@ -23,6 +23,7 @@ interface AttendanceTabProps {
   selectedModeFilter: 'all' | TuitionMode;
   onUpdateAttendance: (records: AttendanceRecord[]) => void;
   todayDate: string;
+  onSelectStudent?: (student: Student) => void;
 }
 
 export const AttendanceTab: React.FC<AttendanceTabProps> = ({
@@ -31,6 +32,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   selectedModeFilter,
   onUpdateAttendance,
   todayDate,
+  onSelectStudent,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(todayDate);
   const [topicCoveredGlobal, setTopicCoveredGlobal] = useState('');
@@ -267,13 +269,17 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                     className="p-4 sm:p-5 hover:bg-[#F9FAF7] transition flex flex-col lg:flex-row lg:items-center justify-between gap-4"
                   >
                     {/* Student Info */}
-                    <div className="flex items-center gap-3 min-w-[240px]">
-                      <div className="w-10 h-10 rounded-2xl bg-[#5C6652] text-[#F7F8F3] font-bold text-xs flex items-center justify-center">
+                    <div 
+                      className={`flex items-center gap-3 min-w-[240px] ${onSelectStudent ? 'cursor-pointer group' : ''}`}
+                      onClick={() => onSelectStudent && onSelectStudent(student)}
+                      title={onSelectStudent ? `Click to manage all activities for ${student.name}` : undefined}
+                    >
+                      <div className="w-10 h-10 rounded-2xl bg-[#5C6652] text-[#F7F8F3] font-bold text-xs flex items-center justify-center group-hover:bg-[#4E5745] transition">
                         {student.name.slice(0, 2).toUpperCase()}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-[#2D3329] text-sm font-serif">{student.name}</span>
+                          <span className="font-bold text-[#2D3329] text-sm font-serif group-hover:text-[#5C6652] group-hover:underline transition">{student.name}</span>
                           <span className="text-[10px] font-mono text-[#707969] bg-[#F0F2EA] px-1.5 py-0.2 rounded">
                             {student.rollNo}
                           </span>

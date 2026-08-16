@@ -42,6 +42,7 @@ interface ProgressTabProps {
   onOpenAddTest: () => void;
   onDeleteTest: (testId: string) => void;
   onGenerateReportCard: (student: Student) => void;
+  onSelectStudent?: (student: Student) => void;
 }
 
 export const ProgressTab: React.FC<ProgressTabProps> = ({
@@ -52,6 +53,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   onOpenAddTest,
   onDeleteTest,
   onGenerateReportCard,
+  onSelectStudent,
 }) => {
   const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('all');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
@@ -475,9 +477,15 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           </button>
                           <div>
                             <button
-                              onClick={() => setSelectedStudentFilter(student.id)}
-                              className="hover:underline text-left font-semibold text-[#2D3329] cursor-pointer"
-                              title={`Focus on ${student.name}`}
+                              onClick={() => {
+                                if (onSelectStudent) {
+                                  onSelectStudent(student);
+                                } else {
+                                  setSelectedStudentFilter(student.id);
+                                }
+                              }}
+                              className="hover:underline hover:text-[#5C6652] text-left font-semibold text-[#2D3329] cursor-pointer"
+                              title={`Manage activities for ${student.name}`}
                             >
                               {student.name}
                             </button>

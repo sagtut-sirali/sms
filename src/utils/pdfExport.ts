@@ -4,7 +4,8 @@ import { Student, TestScore, AttendanceRecord, SubjectSyllabus } from '../types'
 import { calculateGrade } from './formatters';
 
 /**
- * Downloads a DOM element (such as the Report Card Modal content) as a high-resolution PDF.
+ * Downloads a DOM element (such as the Report Card Modal content or Fee Receipt) as a high-resolution PDF.
+ * Captures the entire content regardless of internal scrollbars, viewport clipping, or overflow constraints.
  */
 export const downloadElementAsPdf = async (
   elementId: string,
@@ -20,16 +21,79 @@ export const downloadElementAsPdf = async (
       return false;
     }
 
-    // Capture the element at high resolution
+    // Save original scroll states
+    const originalScrollTop = element.scrollTop;
+    const originalScrollLeft = element.scrollLeft;
+
+    // Reset element scroll to top for clean capture
+    element.scrollTop = 0;
+    element.scrollLeft = 0;
+
+    // Track and reset any ancestor scroll containers temporarily
+    const ancestorScrolls: { el: HTMLElement; top: number; left: number }[] = [];
+    let ancestor = element.parentElement;
+    while (ancestor && ancestor !== document.body) {
+      if (ancestor.scrollTop > 0 || ancestor.scrollLeft > 0) {
+        ancestorScrolls.push({
+          el: ancestor,
+          top: ancestor.scrollTop,
+          left: ancestor.scrollLeft,
+        });
+        ancestor.scrollTop = 0;
+        ancestor.scrollLeft = 0;
+      }
+      ancestor = ancestor.parentElement;
+    }
+
+    // Determine target width for clean A4 aspect ratio
+    const captureWidth = Math.max(element.scrollWidth, element.offsetWidth, 800);
+    const captureHeight = Math.max(element.scrollHeight, element.offsetHeight);
+
+    // Capture full DOM content using html2canvas with unconstrained cloned styling
     const canvas = await html2canvas(element, {
-      scale: 2.5,
+      scale: 2,
       useCORS: true,
       logging: false,
       backgroundColor: '#ffffff',
-      windowWidth: element.scrollWidth,
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0,
+      width: captureWidth,
+      height: captureHeight,
+      windowWidth: captureWidth,
+      windowHeight: captureHeight,
+      onclone: (clonedDoc) => {
+        const clonedTarget = clonedDoc.getElementById(elementId);
+        if (clonedTarget) {
+          // Remove all scroll and height restrictions on the cloned element
+          clonedTarget.style.overflow = 'visible';
+          clonedTarget.style.maxHeight = 'none';
+          clonedTarget.style.height = 'auto';
+          clonedTarget.style.width = `${captureWidth}px`;
+          clonedTarget.style.position = 'relative';
+
+          // Ensure all ancestor wrappers are also visible without overflow clipping
+          let curr = clonedTarget.parentElement;
+          while (curr && curr !== clonedDoc.body) {
+            curr.style.overflow = 'visible';
+            curr.style.maxHeight = 'none';
+            curr.style.height = 'auto';
+            curr = curr.parentElement;
+          }
+        }
+      },
     });
 
-    const imgData = canvas.toDataURL('image/png');
+    // Restore original scroll states on live DOM
+    element.scrollTop = originalScrollTop;
+    element.scrollLeft = originalScrollLeft;
+    ancestorScrolls.forEach((item) => {
+      item.el.scrollTop = item.top;
+      item.el.scrollLeft = item.left;
+    });
+
+    // Initialize jsPDF A4 Document
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -38,30 +102,69 @@ export const downloadElementAsPdf = async (
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    
-    // Calculate aspect ratio
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const ratio = imgWidth / imgHeight;
+    const margin = 10;
+    const contentWidth = pdfWidth - margin * 2;
+    const pageContentHeight = pdfHeight - margin * 2;
 
-    const printWidth = pdfWidth - 20; // 10mm margins on each side
-    const printHeight = printWidth / ratio;
+    const imgWidthPx = canvas.width;
+    const imgHeightPx = canvas.height;
+    const totalPdfHeightMm = (imgHeightPx * contentWidth) / imgWidthPx;
 
-    const yPosition = 10; // 10mm top margin
-
-    if (printHeight > pdfHeight - 20) {
-      // If content is very long, scale to fit within page with margin
-      const fitScale = (pdfHeight - 20) / printHeight;
-      pdf.addImage(imgData, 'PNG', 10, yPosition, printWidth * fitScale, (pdfHeight - 20));
+    if (totalPdfHeightMm <= pageContentHeight) {
+      // Content fits entirely onto a single page
+      const imgData = canvas.toDataURL('image/png');
+      pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, totalPdfHeightMm);
     } else {
-      pdf.addImage(imgData, 'PNG', 10, yPosition, printWidth, printHeight);
+      // Multi-page export: slice canvas proportionally without truncation or distortion
+      const pxPerMm = imgWidthPx / contentWidth;
+      const pageSliceHeightPx = Math.floor(pageContentHeight * pxPerMm);
+
+      let renderedHeightPx = 0;
+      let pageIndex = 0;
+
+      while (renderedHeightPx < imgHeightPx) {
+        if (pageIndex > 0) {
+          pdf.addPage();
+        }
+
+        const currentSliceHeightPx = Math.min(pageSliceHeightPx, imgHeightPx - renderedHeightPx);
+
+        // Render page slice onto an off-screen canvas
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = imgWidthPx;
+        sliceCanvas.height = currentSliceHeightPx;
+        const sliceCtx = sliceCanvas.getContext('2d');
+
+        if (sliceCtx) {
+          sliceCtx.fillStyle = '#ffffff';
+          sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+          sliceCtx.drawImage(
+            canvas,
+            0,
+            renderedHeightPx,
+            imgWidthPx,
+            currentSliceHeightPx,
+            0,
+            0,
+            imgWidthPx,
+            currentSliceHeightPx
+          );
+
+          const sliceImgData = sliceCanvas.toDataURL('image/png');
+          const sliceHeightMm = (currentSliceHeightPx * contentWidth) / imgWidthPx;
+          pdf.addImage(sliceImgData, 'PNG', margin, margin, contentWidth, sliceHeightMm);
+        }
+
+        renderedHeightPx += currentSliceHeightPx;
+        pageIndex++;
+      }
     }
 
     pdf.save(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
     if (onProgress) onProgress(false);
     return true;
   } catch (error) {
-    console.error('Error generating PDF from element:', error);
+    console.error('Error generating full PDF from element:', error);
     if (onProgress) onProgress(false);
     // Fallback: trigger browser print
     window.print();
@@ -127,7 +230,7 @@ export const downloadStudentProgressTrackerPdf = (
   doc.setFontSize(8.5);
   doc.setTextColor(202, 211, 192); // #CAD3C0
   doc.text('Student Progress & Assessment Tracker • Academic Dossier', 14, 17);
-  doc.text('Home & Online Tuitions • STEM Coaching • Cell: +92 300 1234567', 14, 22);
+  doc.text('Home & Online Tuitions • STEM Coaching • Cell: +92 302 2324 503', 14, 22);
 
   // Top Right Badge
   doc.setFillColor(92, 102, 82); // #5C6652

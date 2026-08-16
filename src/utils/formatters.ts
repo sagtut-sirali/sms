@@ -82,7 +82,7 @@ If already paid, kindly share the payment screenshot to confirm.
 
 JazakAllah Khair!
 *Sir Ali Preparations*
-📞 Contact: +92 300 1234567`
+📞 Contact: +92 302 2324 503`
   );
   return `https://wa.me/${cleanPhone}?text=${text}`;
 };
