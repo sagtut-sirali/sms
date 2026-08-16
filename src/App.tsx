@@ -477,7 +477,7 @@ export default function App() {
             Sir Ali Preparations © 2026 • Private Home & Online Tuitions Management System
           </p>
           <div className="flex items-center gap-4 text-xs text-[#707969]">
-            <span>FBISE / CAIE / Punjab Board Coaching</span>
+            <span>CAIE | Karachi & Federal Board | AKU-EB</span>
           </div>
         </div>
       </footer>

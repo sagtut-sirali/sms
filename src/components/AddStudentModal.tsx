@@ -225,7 +225,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
               <label className="block font-semibold text-[#2D3329] mb-1">Exam Board / System</label>
               <input
                 type="text"
-                placeholder="e.g. Federal Board (FBISE) / CAIE Cambridge"
+                placeholder="e.g. CAIE / Karachi Board / Federal Board / AKU-EB"
                 value={board}
                 onChange={(e) => setBoard(e.target.value)}
                 className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"

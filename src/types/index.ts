@@ -15,7 +15,7 @@ export interface Student {
   parentPhone: string;
   email?: string;
   grade: string; // e.g., "Class 9 (Matric)", "Class 10", "F.Sc Part 1", "F.Sc Part 2", "O Level (IGCSE)", "A Level"
-  board: string; // e.g., "Federal Board (FBISE)", "Punjab Board", "Cambridge O/A", "Sindh Board"
+  board: string; // e.g., "CAIE (Cambridge)", "Federal Board (FBISE)", "Karachi Board (BIEK/BSEK)", "AKU-EB"
   tuitionMode: TuitionMode; // 'home' or 'online'
   addressOrLocation?: string; // For home tuition: student address; For online: Zoom/Google Meet link or notes
   timeSlot: string; // e.g., "4:00 PM - 5:30 PM (Mon, Wed, Fri)"
