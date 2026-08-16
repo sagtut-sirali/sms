@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   GraduationCap, 
   Users, 
@@ -11,9 +11,12 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  ShieldCheck
+  ShieldCheck,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { ActiveTab, TuitionMode } from '../types';
+import { downloadProjectZip } from '../utils/zipExport';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -46,6 +49,17 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleLock,
   onOpenChangePin,
 }) => {
+  const [isZipping, setIsZipping] = useState(false);
+
+  const handleDownloadZip = async () => {
+    setIsZipping(true);
+    try {
+      await downloadProjectZip();
+    } finally {
+      setIsZipping(false);
+    }
+  };
+
   const tabs = [
     { id: 'overview', label: 'Dashboard' },
     { id: 'students', label: 'Students', count: studentCounts.total },
@@ -176,6 +190,27 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 </div>
               )}
+
+              {/* Download Project ZIP */}
+              <button
+                id="header-download-zip-btn"
+                onClick={handleDownloadZip}
+                disabled={isZipping}
+                title="Download entire project source code as a ZIP archive for GitHub / offline use"
+                className="inline-flex items-center gap-1.5 bg-[#5C6652] hover:bg-[#4D5644] text-white font-medium text-xs px-3 py-1.5 rounded-xl transition cursor-pointer active:scale-95 shadow-xs disabled:opacity-50"
+              >
+                {isZipping ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Zipping...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download ZIP</span>
+                  </>
+                )}
+              </button>
 
               <button
                 id="header-reset-btn"
