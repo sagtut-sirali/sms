@@ -355,27 +355,37 @@ export const INITIAL_TEST_SCORES: TestScore[] = [
   }
 ];
 
+// Dynamic relative date helpers for initial sample data
+const getSampleRelDate = (daysAgo: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = [
-  // Today's date (assuming 2026-08-15) and recent dates
-  { id: 'att-1', date: '2026-08-15', studentId: 'std-1', status: 'present', topicCovered: 'Work done by variable force & numericals' },
-  { id: 'att-2', date: '2026-08-15', studentId: 'std-2', status: 'present', topicCovered: 'Linear inequalities & region graphs' },
-  { id: 'att-3', date: '2026-08-15', studentId: 'std-3', status: 'present', topicCovered: 'Matrices word problems and theorem 1' },
-  { id: 'att-4', date: '2026-08-15', studentId: 'std-4', status: 'present', topicCovered: 'A2 Magnetic fields & Hall probe effect' },
-  { id: 'att-5', date: '2026-08-15', studentId: 'std-5', status: 'late', topicCovered: 'Organic reaction mechanisms overview', remarks: 'Joined 15 mins late due to traffic' },
-  { id: 'att-6', date: '2026-08-15', studentId: 'std-6', status: 'present', topicCovered: 'Class 9th Physics - Unit 2 Numericals' },
+  // Today's date and recent dates
+  { id: 'att-1', date: getSampleRelDate(0), studentId: 'std-1', status: 'present', topicCovered: 'Work done by variable force & numericals' },
+  { id: 'att-2', date: getSampleRelDate(0), studentId: 'std-2', status: 'present', topicCovered: 'Linear inequalities & region graphs' },
+  { id: 'att-3', date: getSampleRelDate(0), studentId: 'std-3', status: 'present', topicCovered: 'Matrices word problems and theorem 1' },
+  { id: 'att-4', date: getSampleRelDate(0), studentId: 'std-4', status: 'present', topicCovered: 'A2 Magnetic fields & Hall probe effect' },
+  { id: 'att-5', date: getSampleRelDate(0), studentId: 'std-5', status: 'late', topicCovered: 'Organic reaction mechanisms overview', remarks: 'Joined 15 mins late due to traffic' },
+  { id: 'att-6', date: getSampleRelDate(0), studentId: 'std-6', status: 'present', topicCovered: 'Class 9th Physics - Unit 2 Numericals' },
   
   // Previous sessions
-  { id: 'att-7', date: '2026-08-13', studentId: 'std-1', status: 'present', topicCovered: 'Work energy theorem derivation' },
-  { id: 'att-8', date: '2026-08-13', studentId: 'std-2', status: 'present', topicCovered: 'Coordinate geometry midpoint formulas' },
-  { id: 'att-9', date: '2026-08-13', studentId: 'std-3', status: 'present', topicCovered: 'Chapter 2 quadratic equations review' },
-  { id: 'att-10', date: '2026-08-13', studentId: 'std-4', status: 'present', topicCovered: 'Oscillations and Simple Harmonic Motion' },
-  { id: 'att-11', date: '2026-08-13', studentId: 'std-5', status: 'present', topicCovered: 'Chemical bonding and hybridization' },
+  { id: 'att-7', date: getSampleRelDate(2), studentId: 'std-1', status: 'present', topicCovered: 'Work energy theorem derivation' },
+  { id: 'att-8', date: getSampleRelDate(2), studentId: 'std-2', status: 'present', topicCovered: 'Coordinate geometry midpoint formulas' },
+  { id: 'att-9', date: getSampleRelDate(2), studentId: 'std-3', status: 'present', topicCovered: 'Chapter 2 quadratic equations review' },
+  { id: 'att-10', date: getSampleRelDate(2), studentId: 'std-4', status: 'present', topicCovered: 'Oscillations and Simple Harmonic Motion' },
+  { id: 'att-11', date: getSampleRelDate(2), studentId: 'std-5', status: 'present', topicCovered: 'Chemical bonding and hybridization' },
   
-  { id: 'att-12', date: '2026-08-11', studentId: 'std-1', status: 'present', topicCovered: 'Conservation of energy in falling bodies' },
-  { id: 'att-13', date: '2026-08-11', studentId: 'std-2', status: 'absent', remarks: 'Informed family function', topicCovered: 'Recorded lecture sent' },
-  { id: 'att-14', date: '2026-08-11', studentId: 'std-3', status: 'present', topicCovered: 'Synthetic division problems' },
-  { id: 'att-15', date: '2026-08-11', studentId: 'std-4', status: 'present', topicCovered: 'Damped and forced oscillations' },
-  { id: 'att-16', date: '2026-08-11', studentId: 'std-5', status: 'present', topicCovered: 'Hybridization sp3, sp2, sp' }
+  { id: 'att-12', date: getSampleRelDate(4), studentId: 'std-1', status: 'present', topicCovered: 'Conservation of energy in falling bodies' },
+  { id: 'att-13', date: getSampleRelDate(4), studentId: 'std-2', status: 'absent', remarks: 'Informed family function', topicCovered: 'Recorded lecture sent' },
+  { id: 'att-14', date: getSampleRelDate(4), studentId: 'std-3', status: 'present', topicCovered: 'Synthetic division problems' },
+  { id: 'att-15', date: getSampleRelDate(4), studentId: 'std-4', status: 'present', topicCovered: 'Damped and forced oscillations' },
+  { id: 'att-16', date: getSampleRelDate(4), studentId: 'std-5', status: 'present', topicCovered: 'Hybridization sp3, sp2, sp' }
 ];
 
 export const INITIAL_FEES: FeeRecord[] = [

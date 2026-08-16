@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Award, Calendar, BookOpen, User, CheckCircle2 } from 'lucide-react';
 import { Student, TestScore } from '../types';
-import { calculateGrade } from '../utils/formatters';
+import { calculateGrade, getTodayDateString } from '../utils/formatters';
 
 interface AddTestModalProps {
   isOpen: boolean;
@@ -21,7 +21,7 @@ export const AddTestModal: React.FC<AddTestModalProps> = ({
   const [studentId, setStudentId] = useState('');
   const [subject, setSubject] = useState('Physics');
   const [testTitle, setTestTitle] = useState('');
-  const [testDate, setTestDate] = useState(new Date().toISOString().slice(0, 10));
+  const [testDate, setTestDate] = useState(() => getTodayDateString());
   const [maxMarks, setMaxMarks] = useState(50);
   const [obtainedMarks, setObtainedMarks] = useState(42);
   const [remarks, setRemarks] = useState('');

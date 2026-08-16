@@ -17,7 +17,7 @@ import {
   Award
 } from 'lucide-react';
 import { Student, AttendanceRecord, TestScore, SubjectSyllabus, FeeRecord, TuitionMode } from '../types';
-import { formatCurrency, generateWhatsAppFeeReminder, getGradeBadgeColor } from '../utils/formatters';
+import { formatCurrency, generateWhatsAppFeeReminder, getGradeBadgeColor, formatDisplayDate, getCurrentMonthYearString } from '../utils/formatters';
 
 interface OverviewTabProps {
   students: Student[];
@@ -67,12 +67,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     ? Math.round((presentTodayCount / filteredStudents.length) * 100)
     : 0;
 
-  // Current month fees (August 2026 / current month)
-  const currentMonthFees = fees.filter(f => f.month.includes('2026') || f.month.includes('August'));
-  const totalExpectedFee = currentMonthFees.reduce((acc, f) => acc + (f.totalFee - f.discount), 0);
-  const totalCollectedFee = currentMonthFees.reduce((acc, f) => acc + f.paidAmount, 0);
-  const totalPendingFee = currentMonthFees.reduce((acc, f) => acc + f.dueAmount, 0);
-  const overdueFeesList = currentMonthFees.filter(f => f.status === 'overdue' || (f.status === 'partial' && f.dueAmount > 0));
+  // Current month fees (dynamically for current month)
+  const currentMonthName = getCurrentMonthYearString();
+  const currentMonthFees = fees.filter(f => f.month === currentMonthName || f.month.includes(currentMonthName.split(' ')[0]));
+  const feeListToUse = currentMonthFees.length > 0 ? currentMonthFees : fees.slice(0, students.length);
+  const totalExpectedFee = feeListToUse.reduce((acc, f) => acc + (f.totalFee - f.discount), 0);
+  const totalCollectedFee = feeListToUse.reduce((acc, f) => acc + f.paidAmount, 0);
+  const totalPendingFee = feeListToUse.reduce((acc, f) => acc + f.dueAmount, 0);
+  const overdueFeesList = feeListToUse.filter(f => f.status === 'overdue' || (f.status === 'partial' && f.dueAmount > 0));
 
   // Syllabus stats
   let totalTopics = 0;
@@ -109,7 +111,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </span>
               <span className="text-xs text-[#DDE4D1]/80 flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5 text-[#DDE4D1]" />
-                {new Date(todayDate).toLocaleDateString('en-PK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {formatDisplayDate(todayDate)}
               </span>
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-white font-serif">

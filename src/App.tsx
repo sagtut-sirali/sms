@@ -38,10 +38,30 @@ import { AddTestModal } from './components/AddTestModal';
 import { FeeReceiptModal } from './components/FeeReceiptModal';
 import { ReportCardModal } from './components/ReportCardModal';
 import { PinAuthModal } from './components/PinAuthModal';
+import { getTodayDateString } from './utils/formatters';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function App() {
-  const todayDate = '2026-08-15'; // Current system context date
+  // Current system date dynamically initialized and automatically updated daily
+  const [todayDate, setTodayDate] = useState<string>(() => getTodayDateString());
+
+  useEffect(() => {
+    const checkDate = () => {
+      const current = getTodayDateString();
+      setTodayDate(prev => (prev !== current ? current : prev));
+    };
+
+    // Check periodically every minute for midnight roll-over and on window focus/tab switch
+    const interval = setInterval(checkDate, 60000);
+    window.addEventListener('focus', checkDate);
+    document.addEventListener('visibilitychange', checkDate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkDate);
+      document.removeEventListener('visibilitychange', checkDate);
+    };
+  }, []);
 
   // Core Data States with localStorage persistence
   const [students, setStudents] = useState<Student[]>(() => getStoredStudents());

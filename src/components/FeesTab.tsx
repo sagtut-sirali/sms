@@ -16,7 +16,7 @@ import {
   Check
 } from 'lucide-react';
 import { Student, FeeRecord, PaymentStatus, TuitionMode } from '../types';
-import { formatCurrency, generateWhatsAppFeeReminder } from '../utils/formatters';
+import { formatCurrency, generateWhatsAppFeeReminder, getCurrentMonthYearString } from '../utils/formatters';
 
 interface FeesTabProps {
   students: Student[];
@@ -35,20 +35,23 @@ export const FeesTab: React.FC<FeesTabProps> = ({
   onOpenRecordFee,
   onOpenReceiptModal,
 }) => {
-  const [selectedMonth, setSelectedMonth] = useState<string>('August 2026');
+  const currentMonth = getCurrentMonthYearString();
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => currentMonth);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const availableMonths = useMemo(() => {
     const list = Array.from(new Set(fees.map(f => f.month)));
-    if (!list.includes('August 2026')) list.unshift('August 2026');
-    if (!list.includes('July 2026')) list.push('July 2026');
-    if (!list.includes('September 2026')) list.unshift('September 2026');
+    if (!list.includes(currentMonth)) list.unshift(currentMonth);
     return list;
-  }, [fees]);
+  }, [fees, currentMonth]);
 
   // Merge students with fee records for the selected month
   const monthFeeEntries = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthNum = String(now.getMonth() + 1).padStart(2, '0');
+
     return students
       .filter(s => selectedModeFilter === 'all' ? true : s.tuitionMode === selectedModeFilter)
       .map(student => {
@@ -56,17 +59,18 @@ export const FeesTab: React.FC<FeesTabProps> = ({
         
         // If fee record doesn't exist yet for this month, synthesize a default pending record
         if (!feeRecord) {
+          const dueDayStr = String(student.feeDueDay || 5).padStart(2, '0');
           const defaultRecord: FeeRecord = {
             id: `fee-synth-${student.id}-${selectedMonth}`,
             studentId: student.id,
             month: selectedMonth,
-            year: 2026,
+            year: currentYear,
             totalFee: student.monthlyFee,
             discount: 0,
             paidAmount: 0,
             dueAmount: student.monthlyFee,
             status: 'pending',
-            dueDate: `2026-08-0${student.feeDueDay || 5}`,
+            dueDate: `${currentYear}-${currentMonthNum}-${dueDayStr}`,
           };
           return { student, fee: defaultRecord };
         }

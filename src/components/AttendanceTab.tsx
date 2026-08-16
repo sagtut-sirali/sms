@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -35,6 +35,11 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(todayDate);
   const [topicCoveredGlobal, setTopicCoveredGlobal] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'daily' | 'monthly'>('daily');
+
+  // Keep selectedDate updated with todayDate if it was set to today's date
+  useEffect(() => {
+    setSelectedDate(todayDate);
+  }, [todayDate]);
 
   // Filter students based on mode
   const filteredStudents = useMemo(() => {
@@ -139,6 +144,16 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               onChange={(e) => setSelectedDate(e.target.value)}
               className="bg-white border border-[#E0E4D9] text-[#2D3329] rounded-lg px-2 py-1 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#5C6652] cursor-pointer"
             />
+            {selectedDate !== todayDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate(todayDate)}
+                className="bg-[#5C6652] text-white hover:bg-[#4D5644] px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer"
+                title="Jump to Today's Date"
+              >
+                Today
+              </button>
+            )}
           </div>
 
           <div className="inline-flex bg-[#F0F2EA] p-1 rounded-xl border border-[#E0E4D9] text-xs">

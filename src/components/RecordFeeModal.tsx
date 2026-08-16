@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, DollarSign, Calendar, CreditCard, Receipt, User, CheckCircle2 } from 'lucide-react';
 import { Student, FeeRecord, PaymentMethod, PaymentStatus } from '../types';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getTodayDateString, getCurrentMonthYearString } from '../utils/formatters';
 
 interface RecordFeeModalProps {
   isOpen: boolean;
@@ -20,26 +20,52 @@ export const RecordFeeModal: React.FC<RecordFeeModalProps> = ({
   preSelectedStudent,
   preSelectedFee,
 }) => {
+  const currentMonth = getCurrentMonthYearString();
+  const todayStr = getTodayDateString();
+
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [month, setMonth] = useState('August 2026');
+  const [month, setMonth] = useState(() => currentMonth);
   const [totalFee, setTotalFee] = useState(15000);
   const [discount, setDiscount] = useState(0);
   const [paidAmount, setPaidAmount] = useState(15000);
-  const [dueDate, setDueDate] = useState('2026-08-05');
-  const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-05`;
+  });
+  const [paidDate, setPaidDate] = useState(() => todayStr);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Bank Transfer');
   const [receiptNo, setReceiptNo] = useState('');
   const [remarks, setRemarks] = useState('');
 
+  // Generate dynamic month list (current, previous 3, next 3)
+  const monthOptions = useMemo(() => {
+    const list: string[] = [];
+    const now = new Date();
+    for (let i = -2; i <= 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      list.push(d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+    }
+    return list;
+  }, []);
+
   useEffect(() => {
+    const currentStudent = students.find(s => s.id === (preSelectedStudent?.id || selectedStudentId || (students[0]?.id)));
+    const feeDueDay = currentStudent?.feeDueDay || 5;
+    const now = new Date();
+    const calculatedDueDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(feeDueDay).padStart(2, '0')}`;
+
     if (preSelectedStudent) {
       setSelectedStudentId(preSelectedStudent.id);
       setTotalFee(preSelectedStudent.monthlyFee);
       setPaidAmount(preSelectedStudent.monthlyFee);
+      setDueDate(calculatedDueDate);
     } else if (students.length > 0 && !selectedStudentId) {
       setSelectedStudentId(students[0].id);
       setTotalFee(students[0].monthlyFee);
       setPaidAmount(students[0].monthlyFee);
+      setDueDate(calculatedDueDate);
     }
 
     if (preSelectedFee) {
@@ -48,12 +74,16 @@ export const RecordFeeModal: React.FC<RecordFeeModalProps> = ({
       setDiscount(preSelectedFee.discount || 0);
       setPaidAmount(preSelectedFee.paidAmount);
       setDueDate(preSelectedFee.dueDate);
-      setPaidDate(preSelectedFee.paidDate || new Date().toISOString().slice(0, 10));
+      setPaidDate(preSelectedFee.paidDate || todayStr);
       setPaymentMethod(preSelectedFee.paymentMethod || 'Bank Transfer');
       setReceiptNo(preSelectedFee.receiptNo || '');
       setRemarks(preSelectedFee.remarks || '');
     } else {
-      setReceiptNo(`SAP-REC-2608-${Math.floor(Math.random() * 89 + 10)}`);
+      const randomSuffix = Math.floor(Math.random() * 89 + 10);
+      const ymCode = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      setReceiptNo(`SAP-REC-${ymCode}-${randomSuffix}`);
+      setPaidDate(todayStr);
+      setMonth(currentMonth);
     }
   }, [preSelectedStudent, preSelectedFee, isOpen, students]);
 
@@ -160,10 +190,9 @@ export const RecordFeeModal: React.FC<RecordFeeModalProps> = ({
                 onChange={(e) => setMonth(e.target.value)}
                 className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652] font-semibold cursor-pointer"
               >
-                <option value="August 2026">August 2026</option>
-                <option value="July 2026">July 2026</option>
-                <option value="September 2026">September 2026</option>
-                <option value="October 2026">October 2026</option>
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
               </select>
             </div>
 
