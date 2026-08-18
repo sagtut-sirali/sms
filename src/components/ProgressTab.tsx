@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Award, 
   Plus, 
@@ -17,7 +17,9 @@ import {
   UserCheck,
   GraduationCap,
   Sparkles,
-  Printer
+  Printer,
+  Users,
+  X
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -33,6 +35,7 @@ import {
 import { Student, TestScore, AttendanceRecord, SubjectSyllabus } from '../types';
 import { calculateGrade, getGradeBadgeColor, generateWhatsAppProgressReport } from '../utils/formatters';
 import { downloadClassProgressSummaryPdf, downloadStudentProgressTrackerPdf } from '../utils/pdfExport';
+import { Pagination } from './Pagination';
 
 interface ProgressTabProps {
   students: Student[];
@@ -59,6 +62,15 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportingStudentPdf, setIsExportingStudentPdf] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Reset page to 1 on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStudentFilter, selectedSubjectFilter, searchQuery]);
 
   // Selected Student Object
   const selectedStudentObj = useMemo(() => {
@@ -91,6 +103,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       return true;
     }).sort((a, b) => new Date(b.testDate).getTime() - new Date(a.testDate).getTime());
   }, [testScores, selectedStudentFilter, selectedSubjectFilter, searchQuery, students]);
+
+  // Paginated tests calculation
+  const totalTestPages = Math.ceil(filteredTests.length / pageSize) || 1;
+  const paginatedTests = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return filteredTests.slice(startIdx, startIdx + pageSize);
+  }, [filteredTests, currentPage, pageSize]);
 
   // Chart data for selected student or overall tests
   const chartData = useMemo(() => {
@@ -223,7 +242,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         </div>
       </div>
 
-      {/* Filter Bar */}
+      {/* Filter Bar with Student Dropdown Menu */}
       <div className="bg-white rounded-2xl p-4 border border-[#E0E4D9] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         
         {/* Search */}
@@ -238,27 +257,41 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           />
         </div>
 
-        {/* Filters & Student Selector */}
+        {/* Filters & Registered Student Selector Dropdown */}
         <div className="flex flex-wrap items-center gap-2">
           
-          {/* Student Filter */}
-          <div className="flex items-center gap-1.5 bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl px-2.5 py-1">
-            <span className="text-[11px] text-[#707969] font-medium">Student:</span>
+          {/* Student Filter Dropdown */}
+          <div className="flex items-center gap-2 bg-[#F7F8F3] border border-[#CAD3C0] rounded-xl px-3 py-1.5 shadow-2xs">
+            <Users className="w-4 h-4 text-[#5C6652]" />
+            <label htmlFor="progress-student-filter-select" className="text-xs font-semibold text-[#42473E] whitespace-nowrap">
+              Student:
+            </label>
             <select
               id="progress-student-filter-select"
               value={selectedStudentFilter}
               onChange={(e) => setSelectedStudentFilter(e.target.value)}
-              className="bg-transparent border-none text-xs font-semibold text-[#2D3329] focus:outline-none cursor-pointer"
+              className="bg-transparent border-none text-xs font-bold text-[#2D3329] focus:outline-none cursor-pointer pr-1"
             >
-              <option value="all">All Students ({students.length})</option>
+              <option value="all">All Registered Students ({students.length})</option>
               {students.map(s => (
-                <option key={s.id} value={s.id}>{s.name} ({s.rollNo})</option>
+                <option key={s.id} value={s.id}>{s.name} ({s.rollNo} • {s.grade})</option>
               ))}
             </select>
           </div>
 
+          {selectedStudentObj && (
+            <button
+              onClick={() => setSelectedStudentFilter('all')}
+              className="text-xs text-[#5C6652] hover:text-[#2D3329] bg-[#F0F2EA] hover:bg-[#E0E4D9] px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 cursor-pointer"
+              title="Show all registered students"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Show All</span>
+            </button>
+          )}
+
           {/* Subject Filter */}
-          <div className="flex items-center gap-1.5 bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl px-2.5 py-1">
+          <div className="flex items-center gap-1.5 bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl px-2.5 py-1.5">
             <span className="text-[11px] text-[#707969] font-medium">Subject:</span>
             <select
               value={selectedSubjectFilter}
@@ -282,12 +315,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             
             {/* Student Info */}
             <div className="flex items-center gap-3.5">
-              <div className="w-13 h-13 rounded-2xl bg-[#5C6652] text-[#F7F8F3] flex items-center justify-center font-bold text-lg font-serif shadow-inner shrink-0">
+              <div 
+                onClick={() => onSelectStudent && onSelectStudent(selectedStudentObj)}
+                className={`w-13 h-13 rounded-2xl bg-[#5C6652] text-[#F7F8F3] flex items-center justify-center font-bold text-lg font-serif shadow-inner shrink-0 ${onSelectStudent ? 'cursor-pointer hover:bg-[#4E5745]' : ''}`}
+                title="Click to view full student hub"
+              >
                 {selectedStudentObj.name[0]}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold font-serif">{selectedStudentObj.name}</h3>
+                  <h3 
+                    onClick={() => onSelectStudent && onSelectStudent(selectedStudentObj)}
+                    className={`text-base font-bold font-serif ${onSelectStudent ? 'cursor-pointer hover:underline' : ''}`}
+                  >
+                    {selectedStudentObj.name}
+                  </h3>
                   <span className="text-xs bg-[#444D3E] text-[#CAD3C0] px-2 py-0.5 rounded-md font-mono">
                     {selectedStudentObj.rollNo}
                   </span>
@@ -414,7 +456,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         </div>
       )}
 
-      {/* Test Log Table */}
+      {/* Test Log Table with Pagination */}
       <div className="bg-white rounded-2xl border border-[#E0E4D9] shadow-xs overflow-hidden">
         <div className="p-4 bg-[#FAFBF9] border-b border-[#E0E4D9] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
@@ -424,7 +466,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 : 'All Students Examination & Quiz Logs'}
             </h3>
             <span className="text-[11px] text-[#707969]">
-              Showing {filteredTests.length} test records
+              Total {filteredTests.length} test records {selectedStudentObj ? `for ${selectedStudentObj.name}` : 'across registered students'}
             </span>
           </div>
 
@@ -453,14 +495,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E0E4D9]">
-              {filteredTests.length === 0 ? (
+              {paginatedTests.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-10 text-center text-[#707969]">
                     No test records found matching criteria.
                   </td>
                 </tr>
               ) : (
-                filteredTests.map((test) => {
+                paginatedTests.map((test) => {
                   const student = students.find(s => s.id === test.studentId);
                   if (!student) return null;
 
@@ -546,8 +588,24 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Assessment Log Pagination */}
+        {filteredTests.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalTestPages}
+            totalItems={filteredTests.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[5, 10, 15, 25]}
+            itemName="assessments"
+            idPrefix="progress-tests"
+          />
+        )}
       </div>
 
     </div>
   );
 };
+

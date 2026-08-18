@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, 
   Search, 
@@ -7,27 +7,27 @@ import {
   Home, 
   Laptop, 
   Phone, 
-  MapPin, 
-  BookOpen, 
+  Calendar, 
   DollarSign, 
   Award, 
   FileText, 
-  MoreVertical, 
   Edit, 
   Trash2, 
-  CheckCircle2,
-  Send,
-  Calendar,
-  Grid,
-  List,
-  Download
+  Grid, 
+  List, 
+  Download, 
+  X,
+  Layers,
+  UserPlus
 } from 'lucide-react';
-import { Student, AttendanceRecord, TestScore, FeeRecord, TuitionMode } from '../types';
-import { formatCurrency, generateWhatsAppProgressReport } from '../utils/formatters';
+import { Student, AttendanceRecord, TestScore, FeeRecord, TuitionMode, StudentGroup } from '../types';
+import { formatCurrency } from '../utils/formatters';
 import { downloadStudentProgressTrackerPdf } from '../utils/pdfExport';
+import { Pagination } from './Pagination';
 
 interface StudentsTabProps {
   students: Student[];
+  groups?: StudentGroup[];
   attendance: AttendanceRecord[];
   testScores: TestScore[];
   fees: FeeRecord[];
@@ -38,10 +38,12 @@ interface StudentsTabProps {
   onDeleteStudent: (studentId: string) => void;
   onGenerateReportCard: (student: Student) => void;
   onRecordFeeForStudent: (student: Student) => void;
+  onAssignStudentsToGroup?: (groupId: string, studentIds: string[]) => void;
 }
 
 export const StudentsTab: React.FC<StudentsTabProps> = ({
   students,
+  groups = [],
   attendance,
   testScores,
   fees,
@@ -52,15 +54,31 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   onDeleteStudent,
   onGenerateReportCard,
   onRecordFeeForStudent,
+  onAssignStudentsToGroup,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [gradeFilter, setGradeFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+
+  // Multi-select for bulk group assignment
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [bulkTargetGroupId, setBulkTargetGroupId] = useState<string>('');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(6);
 
   // Extract unique grades
   const uniqueGrades = useMemo(() => {
     return Array.from(new Set(students.map(s => s.grade))).filter(Boolean);
   }, [students]);
+
+  // Reset pagination on filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedModeFilter, gradeFilter, groupFilter, selectedStudentFilter, searchQuery]);
 
   // Filter students
   const filteredStudents = useMemo(() => {
@@ -71,6 +89,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       }
       // Grade filter
       if (gradeFilter !== 'all' && student.grade !== gradeFilter) {
+        return false;
+      }
+      // Group filter
+      if (groupFilter !== 'all') {
+        const grp = groups.find(g => g.id === groupFilter);
+        if (!grp || !grp.studentIds.includes(student.id)) {
+          return false;
+        }
+      }
+      // Specific student dropdown filter
+      if (selectedStudentFilter !== 'all' && student.id !== selectedStudentFilter) {
         return false;
       }
       // Search query
@@ -85,7 +114,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       }
       return true;
     });
-  }, [students, selectedModeFilter, gradeFilter, searchQuery]);
+  }, [students, groups, selectedModeFilter, gradeFilter, groupFilter, selectedStudentFilter, searchQuery]);
+
+  // Paginated students slice
+  const totalPages = Math.ceil(filteredStudents.length / pageSize) || 1;
+  const paginatedStudents = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(startIdx, startIdx + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
+
+  // Helper to find student's assigned groups
+  const getStudentGroups = (studentId: string) => {
+    return groups.filter(g => g.studentIds.includes(studentId));
+  };
+
+  const handleBulkAssign = () => {
+    if (!bulkTargetGroupId || selectedStudentIds.length === 0 || !onAssignStudentsToGroup) return;
+    onAssignStudentsToGroup(bulkTargetGroupId, selectedStudentIds);
+    setSelectedStudentIds([]);
+    setBulkTargetGroupId('');
+  };
 
   return (
     <div className="space-y-6">
@@ -93,23 +141,53 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       {/* Top Controls Bar */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E0E4D9] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         
-        {/* Search Input */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-[#707969] absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            id="student-search-input"
-            type="text"
-            placeholder="Search by student name, roll no, subject, grade..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl text-[#2D3329] placeholder-[#8A9382] focus:outline-none focus:ring-2 focus:ring-[#5C6652]/20 focus:border-[#5C6652] transition"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#707969] hover:text-[#2D3329] cursor-pointer"
+        {/* Search Input & Student Dropdown */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 max-w-2xl">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-[#707969] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              id="student-search-input"
+              type="text"
+              placeholder="Search by student name, roll no, subject..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl text-[#2D3329] placeholder-[#8A9382] focus:outline-none focus:ring-2 focus:ring-[#5C6652]/20 focus:border-[#5C6652] transition"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#707969] hover:text-[#2D3329] cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Student Dropdown Selector */}
+          <div className="flex items-center gap-2 bg-[#F7F8F3] border border-[#CAD3C0] rounded-xl px-3 py-2 text-xs font-semibold text-[#2D3329]">
+            <Users className="w-4 h-4 text-[#5C6652]" />
+            <span>Student:</span>
+            <select
+              id="students-dropdown-filter-select"
+              value={selectedStudentFilter}
+              onChange={(e) => setSelectedStudentFilter(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold text-[#2D3329] focus:outline-none cursor-pointer pr-1"
             >
-              Clear
+              <option value="all">All Students ({students.length})</option>
+              {students.map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.rollNo})</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedStudentFilter !== 'all' && (
+            <button
+              onClick={() => setSelectedStudentFilter('all')}
+              className="text-xs text-[#5C6652] hover:text-[#2D3329] bg-[#F0F2EA] hover:bg-[#E0E4D9] px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 cursor-pointer"
+              title="Show all registered students"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Show All</span>
             </button>
           )}
         </div>
@@ -117,6 +195,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         {/* Filters & Actions */}
         <div className="flex flex-wrap items-center gap-2.5">
           
+          {/* Group Filter */}
+          {groups.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl px-3 py-1.5 text-xs text-[#42473E]">
+              <Layers className="w-3.5 h-3.5 text-[#5C6652]" />
+              <select
+                id="student-group-filter"
+                value={groupFilter}
+                onChange={(e) => setGroupFilter(e.target.value)}
+                className="bg-transparent border-none text-xs font-medium focus:outline-none text-[#2D3329] cursor-pointer"
+              >
+                <option value="all">All Batches / Groups</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.studentIds.length})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Grade Selector */}
           <div className="flex items-center gap-1.5 bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl px-3 py-1.5 text-xs text-[#42473E]">
             <Filter className="w-3.5 h-3.5 text-[#707969]" />
@@ -168,13 +266,62 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
       </div>
 
+      {/* Floating 1-Click Bulk Assign to Group Bar */}
+      {selectedStudentIds.length > 0 && (
+        <div className="bg-[#2D3329] text-white p-3 sm:p-4 rounded-2xl shadow-lg border border-[#3E4738] flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg bg-[#5C6652] text-white font-bold text-xs flex items-center justify-center">
+              {selectedStudentIds.length}
+            </span>
+            <span className="text-xs sm:text-sm font-semibold">Students Selected for Group Action</span>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {groups.length > 0 && (
+              <select
+                value={bulkTargetGroupId}
+                onChange={(e) => setBulkTargetGroupId(e.target.value)}
+                className="text-xs bg-[#3D4736] border border-[#5C6652] text-white rounded-xl px-3 py-2 focus:outline-none flex-1 sm:flex-none cursor-pointer"
+              >
+                <option value="">Choose Target Batch...</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={handleBulkAssign}
+              disabled={!bulkTargetGroupId}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                bulkTargetGroupId
+                  ? 'bg-[#E9EDE0] hover:bg-[#DEE4D3] text-[#2D3329] cursor-pointer'
+                  : 'bg-[#42473E] text-[#8A9382] cursor-not-allowed'
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>1-Click Assign</span>
+            </button>
+
+            <button
+              onClick={() => setSelectedStudentIds([])}
+              className="text-xs text-[#CAD3C0] hover:text-white px-2 py-1 cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Roster Display */}
       {filteredStudents.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-[#E0E4D9]">
           <Users className="w-12 h-12 text-[#8A9382] mx-auto mb-3" />
           <h3 className="text-base font-semibold text-[#2D3329] font-serif">No students found</h3>
           <p className="text-xs text-[#707969] mt-1 max-w-sm mx-auto">
-            Try adjusting your search query or filters, or add a new student to the roster.
+            Try adjusting your search query, grade, or batch filter, or add a new student.
           </p>
           <button
             onClick={onOpenAddStudent}
@@ -185,170 +332,216 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredStudents.map((student) => {
-            // Student specific metrics
-            const studentAttendance = attendance.filter(a => a.studentId === student.id);
-            const presentCount = studentAttendance.filter(a => a.status === 'present' || a.status === 'late').length;
-            const attRate = studentAttendance.length > 0 
-              ? Math.round((presentCount / studentAttendance.length) * 100) 
-              : 100;
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {paginatedStudents.map((student) => {
+              const studentAttendance = attendance.filter(a => a.studentId === student.id);
+              const presentCount = studentAttendance.filter(a => a.status === 'present' || a.status === 'late').length;
+              const attRate = studentAttendance.length > 0 
+                ? Math.round((presentCount / studentAttendance.length) * 100) 
+                : 100;
 
-            const studentTests = testScores.filter(t => t.studentId === student.id);
-            const avgScore = studentTests.length > 0
-              ? Math.round(studentTests.reduce((acc, t) => acc + t.percentage, 0) / studentTests.length)
-              : null;
+              const studentTests = testScores.filter(t => t.studentId === student.id);
+              const avgScore = studentTests.length > 0
+                ? Math.round(studentTests.reduce((acc, t) => acc + t.percentage, 0) / studentTests.length)
+                : null;
 
-            return (
-              <div
-                key={student.id}
-                className="bg-white rounded-2xl border border-[#E0E4D9] shadow-xs hover:shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between group"
-              >
-                {/* Header */}
-                <div className="p-5 pb-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-[#5C6652] text-[#F7F8F3] font-bold text-base flex items-center justify-center shadow-xs">
-                        {student.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 
-                            onClick={() => onSelectStudent(student)}
-                            className="font-bold text-[#2D3329] text-base font-serif hover:text-[#5C6652] cursor-pointer transition"
-                          >
-                            {student.name}
-                          </h3>
-                          <span className="text-[11px] font-mono font-medium text-[#707969] bg-[#F0F2EA] px-1.5 py-0.2 rounded-md">
-                            {student.rollNo}
-                          </span>
+              const studentGroups = getStudentGroups(student.id);
+              const isSelected = selectedStudentIds.includes(student.id);
+
+              return (
+                <div
+                  key={student.id}
+                  className={`bg-white rounded-2xl border ${
+                    isSelected ? 'border-[#5C6652] ring-2 ring-[#5C6652]/20' : 'border-[#E0E4D9]'
+                  } shadow-xs hover:shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between group`}
+                >
+                  {/* Header */}
+                  <div className="p-5 pb-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedStudentIds([...selectedStudentIds, student.id]);
+                            } else {
+                              setSelectedStudentIds(selectedStudentIds.filter((id) => id !== student.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-[#5C6652] accent-[#5C6652] cursor-pointer"
+                        />
+                        <div className="w-11 h-11 rounded-2xl bg-[#5C6652] text-[#F7F8F3] font-bold text-base flex items-center justify-center shadow-xs">
+                          {student.name.slice(0, 2).toUpperCase()}
                         </div>
-                        <p className="text-xs text-[#707969] mt-0.5 font-medium">
-                          {student.grade}
-                        </p>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 
+                              onClick={() => onSelectStudent(student)}
+                              className="font-bold text-[#2D3329] text-base font-serif hover:text-[#5C6652] cursor-pointer transition"
+                            >
+                              {student.name}
+                            </h3>
+                            <span className="text-[11px] font-mono font-medium text-[#707969] bg-[#F0F2EA] px-1.5 py-0.2 rounded-md">
+                              {student.rollNo}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#707969] mt-0.5 font-medium">
+                            {student.grade}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span className={`text-[10px] font-semibold px-2.5 py-0.8 rounded-full flex items-center gap-1 border ${
+                        student.tuitionMode === 'home'
+                          ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]'
+                          : 'bg-[#E8EDEB] text-[#3D5A5B] border-[#CAD8D5]'
+                      }`}>
+                        {student.tuitionMode === 'home' ? <Home className="w-3 h-3" /> : <Laptop className="w-3 h-3" />}
+                        {student.tuitionMode === 'home' ? 'Home' : 'Online'}
+                      </span>
+                    </div>
+
+                    {/* Assigned Groups Badges */}
+                    {studentGroups.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-1">
+                        {studentGroups.map((g) => (
+                          <span
+                            key={g.id}
+                            className="inline-flex items-center gap-1 bg-[#FAF0E6] text-[#8C5D39] border border-[#EBD6C3] text-[10px] font-semibold px-2 py-0.5 rounded-md"
+                          >
+                            <Layers className="w-2.5 h-2.5" />
+                            <span>{g.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Subjects Tag Row */}
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {student.subjects.map((sub, i) => (
+                        <span key={i} className="text-[10px] font-medium bg-[#F0F2EA] text-[#42473E] px-2 py-0.5 rounded-md border border-[#E0E4D9]">
+                          {sub}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Quick Info details */}
+                    <div className="mt-3.5 pt-3 border-t border-[#E0E4D9] space-y-1.5 text-xs text-[#42473E]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#707969] flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-[#5C6652]" /> Slot:
+                        </span>
+                        <span className="font-medium text-[#2D3329] text-right truncate max-w-[180px]">
+                          {student.timeSlot}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#707969] flex items-center gap-1">
+                          <DollarSign className="w-3.5 h-3.5 text-[#5C6652]" /> Monthly Fee:
+                        </span>
+                        <span className="font-semibold text-[#2D3329]">
+                          {formatCurrency(student.monthlyFee)}
+                          <span className="text-[10px] text-[#707969] font-normal ml-1">(Due {student.feeDueDay}th)</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#707969] flex items-center gap-1">
+                          <Phone className="w-3.5 h-3.5 text-[#5C6652]" /> Parent ({student.parentName}):
+                        </span>
+                        <span className="font-medium text-[#2D3329]">
+                          {student.parentPhone}
+                        </span>
                       </div>
                     </div>
 
-                    <span className={`text-[10px] font-semibold px-2.5 py-0.8 rounded-full flex items-center gap-1 border ${
-                      student.tuitionMode === 'home'
-                        ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]'
-                        : 'bg-[#E8EDEB] text-[#3D5A5B] border-[#CAD8D5]'
-                    }`}>
-                      {student.tuitionMode === 'home' ? <Home className="w-3 h-3" /> : <Laptop className="w-3 h-3" />}
-                      {student.tuitionMode === 'home' ? 'Home' : 'Online'}
-                    </span>
-                  </div>
-
-                  {/* Subjects Tag Row */}
-                  <div className="mt-3.5 flex flex-wrap gap-1">
-                    {student.subjects.map((sub, i) => (
-                      <span key={i} className="text-[10px] font-medium bg-[#F0F2EA] text-[#42473E] px-2 py-0.5 rounded-md border border-[#E0E4D9]">
-                        {sub}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Quick Info details */}
-                  <div className="mt-3.5 pt-3 border-t border-[#E0E4D9] space-y-1.5 text-xs text-[#42473E]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#707969] flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-[#5C6652]" /> Slot:
-                      </span>
-                      <span className="font-medium text-[#2D3329] text-right truncate max-w-[180px]">
-                        {student.timeSlot}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#707969] flex items-center gap-1">
-                        <DollarSign className="w-3.5 h-3.5 text-[#5C6652]" /> Monthly Fee:
-                      </span>
-                      <span className="font-semibold text-[#2D3329]">
-                        {formatCurrency(student.monthlyFee)}
-                        <span className="text-[10px] text-[#707969] font-normal ml-1">(Due {student.feeDueDay}th)</span>
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#707969] flex items-center gap-1">
-                        <Phone className="w-3.5 h-3.5 text-[#5C6652]" /> Parent ({student.parentName}):
-                      </span>
-                      <span className="font-medium text-[#2D3329]">
-                        {student.parentPhone}
-                      </span>
+                    {/* Stats Mini Pill bar */}
+                    <div className="mt-3.5 grid grid-cols-2 gap-2 text-center text-xs">
+                      <div className="bg-[#FAFBF9] p-2 rounded-xl border border-[#E0E4D9]">
+                        <span className="text-[10px] text-[#707969] block">Attendance</span>
+                        <span className={`font-bold text-xs ${attRate >= 80 ? 'text-[#3D4736]' : 'text-[#9E6547]'}`}>
+                          {attRate}%
+                        </span>
+                      </div>
+                      <div className="bg-[#FAFBF9] p-2 rounded-xl border border-[#E0E4D9]">
+                        <span className="text-[10px] text-[#707969] block">Avg. Test Score</span>
+                        <span className="font-bold text-xs text-[#5C6652]">
+                          {avgScore !== null ? `${avgScore}%` : 'N/A'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Stats Mini Pill bar */}
-                  <div className="mt-3.5 grid grid-cols-2 gap-2 text-center text-xs">
-                    <div className="bg-[#FAFBF9] p-2 rounded-xl border border-[#E0E4D9]">
-                      <span className="text-[10px] text-[#707969] block">Attendance</span>
-                      <span className={`font-bold text-xs ${attRate >= 80 ? 'text-[#3D4736]' : 'text-[#9E6547]'}`}>
-                        {attRate}%
-                      </span>
-                    </div>
-                    <div className="bg-[#FAFBF9] p-2 rounded-xl border border-[#E0E4D9]">
-                      <span className="text-[10px] text-[#707969] block">Avg. Test Score</span>
-                      <span className="font-bold text-xs text-[#5C6652]">
-                        {avgScore !== null ? `${avgScore}%` : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  {/* Card Footer Actions */}
+                  <div className="p-3 bg-[#FAFBF9] border-t border-[#E0E4D9] flex items-center justify-between gap-1 text-xs">
+                    
+                    <button
+                      onClick={() => onSelectStudent(student)}
+                      className="text-[#5C6652] hover:text-[#2D3329] font-semibold px-2 py-1 rounded transition text-xs cursor-pointer"
+                    >
+                      View 360° Profile
+                    </button>
 
-                {/* Card Footer Actions */}
-                <div className="p-3 bg-[#FAFBF9] border-t border-[#E0E4D9] flex items-center justify-between gap-1 text-xs">
-                  
-                  <button
-                    onClick={() => onSelectStudent(student)}
-                    className="text-[#5C6652] hover:text-[#2D3329] font-semibold px-2 py-1 rounded transition text-xs cursor-pointer"
-                  >
-                    View 360° Profile
-                  </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance)}
+                        title="Download Progress Tracker PDF"
+                        className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onGenerateReportCard(student)}
+                        title="Generate Academic Report Card"
+                        className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onRecordFeeForStudent(student)}
+                        title="Record Tuition Fee"
+                        className="p-1.5 text-[#707969] hover:text-[#5C6652] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onEditStudent(student)}
+                        title="Edit Student Info"
+                        className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onDeleteStudent(student.id)}
+                        title="Remove Student"
+                        className="p-1.5 text-[#707969] hover:text-[#995353] hover:bg-[#FCECEC] rounded-lg transition cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance)}
-                      title="Download Progress Tracker PDF"
-                      className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onGenerateReportCard(student)}
-                      title="Generate Academic Report Card"
-                      className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
-                    >
-                      <FileText className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onRecordFeeForStudent(student)}
-                      title="Record Tuition Fee"
-                      className="p-1.5 text-[#707969] hover:text-[#5C6652] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
-                    >
-                      <DollarSign className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onEditStudent(student)}
-                      title="Edit Student Info"
-                      className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onDeleteStudent(student.id)}
-                      title="Remove Student"
-                      className="p-1.5 text-[#707969] hover:text-[#995353] hover:bg-[#FCECEC] rounded-lg transition cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
 
                 </div>
+              );
+            })}
+          </div>
 
-              </div>
-            );
-          })}
+          {/* Grid View Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredStudents.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[6, 9, 12, 24]}
+            itemName="students"
+            idPrefix="students-grid"
+          />
         </div>
       ) : (
         /* TABLE VIEW */
@@ -357,9 +550,27 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F0F2EA] text-[#707969] font-semibold border-b border-[#E0E4D9]">
                 <tr>
+                  <th className="py-3 px-4 w-8">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredStudents.length > 0 &&
+                        selectedStudentIds.length === filteredStudents.length
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedStudentIds(filteredStudents.map((s) => s.id));
+                        } else {
+                          setSelectedStudentIds([]);
+                        }
+                      }}
+                      className="w-3.5 h-3.5 rounded text-[#5C6652] accent-[#5C6652] cursor-pointer"
+                    />
+                  </th>
                   <th className="py-3 px-4">Student</th>
                   <th className="py-3 px-4">Roll No</th>
                   <th className="py-3 px-4">Class / Board</th>
+                  <th className="py-3 px-4">Assigned Batch</th>
                   <th className="py-3 px-4">Mode</th>
                   <th className="py-3 px-4">Time Slot</th>
                   <th className="py-3 px-4">Monthly Fee</th>
@@ -368,82 +579,132 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E0E4D9]">
-                {filteredStudents.map((student) => (
-                  <tr key={student.id} className="hover:bg-[#F9FAF7] transition">
-                    <td className="py-3.5 px-4">
-                      <div 
-                        className="flex items-center gap-2.5 cursor-pointer"
-                        onClick={() => onSelectStudent(student)}
-                      >
-                        <div className="w-8 h-8 rounded-xl bg-[#5C6652] text-[#F7F8F3] font-bold text-xs flex items-center justify-center">
-                          {student.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-[#2D3329] hover:text-[#5C6652] transition">
-                            {student.name}
+                {paginatedStudents.map((student) => {
+                  const studentGroups = getStudentGroups(student.id);
+                  const isSel = selectedStudentIds.includes(student.id);
+
+                  return (
+                    <tr key={student.id} className={`hover:bg-[#F9FAF7] transition ${isSel ? 'bg-[#F0F2EA]/40' : ''}`}>
+                      <td className="py-3.5 px-4">
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedStudentIds([...selectedStudentIds, student.id]);
+                            } else {
+                              setSelectedStudentIds(
+                                selectedStudentIds.filter((id) => id !== student.id)
+                              );
+                            }
+                          }}
+                          className="w-3.5 h-3.5 rounded text-[#5C6652] accent-[#5C6652] cursor-pointer"
+                        />
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div 
+                          className="flex items-center gap-2.5 cursor-pointer"
+                          onClick={() => onSelectStudent(student)}
+                        >
+                          <div className="w-8 h-8 rounded-xl bg-[#5C6652] text-[#F7F8F3] font-bold text-xs flex items-center justify-center">
+                            {student.name.slice(0, 2).toUpperCase()}
                           </div>
-                          <div className="text-[11px] text-[#707969]">
-                            {student.subjects.join(', ')}
+                          <div>
+                            <div className="font-semibold text-[#2D3329] hover:text-[#5C6652] transition">
+                              {student.name}
+                            </div>
+                            <div className="text-[11px] text-[#707969]">
+                              {student.subjects.join(', ')}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-mono font-medium text-[#707969]">{student.rollNo}</td>
-                    <td className="py-3.5 px-4 text-[#42473E]">
-                      <div className="font-medium text-[#2D3329]">{student.grade}</div>
-                      <div className="text-[11px] text-[#707969]">{student.board}</div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 w-max border ${
-                        student.tuitionMode === 'home' ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]' : 'bg-[#E8EDEB] text-[#3D5A5B] border-[#CAD8D5]'
-                      }`}>
-                        {student.tuitionMode === 'home' ? <Home className="w-3 h-3" /> : <Laptop className="w-3 h-3" />}
-                        {student.tuitionMode === 'home' ? 'Home' : 'Online'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-[#42473E]">{student.timeSlot}</td>
-                    <td className="py-3.5 px-4 font-bold text-[#2D3329]">{formatCurrency(student.monthlyFee)}</td>
-                    <td className="py-3.5 px-4 text-[#42473E]">
-                      <div>{student.parentName}</div>
-                      <div className="text-[11px] text-[#707969]">{student.parentPhone}</div>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance)}
-                          title="Download Progress Tracker PDF"
-                          className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onGenerateReportCard(student)}
-                          title="Report Card"
-                          className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onEditStudent(student)}
-                          title="Edit"
-                          className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onDeleteStudent(student.id)}
-                          title="Delete"
-                          className="p-1.5 text-[#707969] hover:text-[#995353] hover:bg-[#FCECEC] rounded-lg cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-medium text-[#707969]">{student.rollNo}</td>
+                      <td className="py-3.5 px-4 text-[#42473E]">
+                        <div className="font-medium text-[#2D3329]">{student.grade}</div>
+                        <div className="text-[11px] text-[#707969]">{student.board}</div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {studentGroups.length === 0 ? (
+                          <span className="text-[10px] text-[#A4AD9B]">No batch</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {studentGroups.map((g) => (
+                              <span
+                                key={g.id}
+                                className="bg-[#FAF0E6] text-[#8C5D39] px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                              >
+                                {g.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 w-max border ${
+                          student.tuitionMode === 'home' ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]' : 'bg-[#E8EDEB] text-[#3D5A5B] border-[#CAD8D5]'
+                        }`}>
+                          {student.tuitionMode === 'home' ? <Home className="w-3 h-3" /> : <Laptop className="w-3 h-3" />}
+                          {student.tuitionMode === 'home' ? 'Home' : 'Online'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-[#42473E]">{student.timeSlot}</td>
+                      <td className="py-3.5 px-4 font-bold text-[#2D3329]">{formatCurrency(student.monthlyFee)}</td>
+                      <td className="py-3.5 px-4 text-[#42473E]">
+                        <div>{student.parentName}</div>
+                        <div className="text-[11px] text-[#707969]">{student.parentPhone}</div>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => downloadStudentProgressTrackerPdf(student, testScores, attendance)}
+                            title="Download Progress Tracker PDF"
+                            className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onGenerateReportCard(student)}
+                            title="Report Card"
+                            className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onEditStudent(student)}
+                            title="Edit"
+                            className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg cursor-pointer"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onDeleteStudent(student.id)}
+                            title="Delete"
+                            className="p-1.5 text-[#707969] hover:text-[#995353] hover:bg-[#FCECEC] rounded-lg cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+
+          {/* Table View Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredStudents.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[6, 10, 15, 25]}
+            itemName="students"
+            idPrefix="students-table"
+          />
         </div>
       )}
 

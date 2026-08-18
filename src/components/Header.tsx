@@ -11,9 +11,11 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  ShieldCheck
+  ShieldCheck,
+  FileSpreadsheet,
+  Cloud
 } from 'lucide-react';
-import { ActiveTab, TuitionMode } from '../types';
+import { ActiveTab, TuitionMode, GoogleSheetsConfig } from '../types';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -26,9 +28,11 @@ interface HeaderProps {
   onExportData?: () => void;
   onResetData: () => void;
   studentCounts: { total: number; home: number; online: number };
+  groupCount?: number;
   isLocked: boolean;
   onToggleLock: () => void;
   onOpenChangePin: () => void;
+  sheetsConfig?: GoogleSheetsConfig | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,17 +46,21 @@ export const Header: React.FC<HeaderProps> = ({
   onExportData,
   onResetData,
   studentCounts,
+  groupCount = 0,
   isLocked,
   onToggleLock,
   onOpenChangePin,
+  sheetsConfig,
 }) => {
   const tabs = [
     { id: 'overview', label: 'Dashboard' },
     { id: 'students', label: 'Students', count: studentCounts.total },
+    { id: 'groups', label: 'Groups & Batches', count: groupCount },
     { id: 'attendance', label: 'Attendance' },
     { id: 'syllabus', label: 'Syllabus Tracker' },
     { id: 'progress', label: 'Progress & Tests' },
     { id: 'fees', label: 'Fee Records' },
+    { id: 'sheets', label: 'Google Sheets DB', isSpecial: true },
   ];
 
   return (
@@ -206,6 +214,16 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <span>{tab.label}</span>
+                {tab.id === 'sheets' && (
+                  <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                    sheetsConfig?.spreadsheetId
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${sheetsConfig?.spreadsheetId ? 'bg-emerald-600 animate-pulse' : 'bg-amber-600'}`} />
+                    {sheetsConfig?.spreadsheetId ? 'Live' : 'Connect'}
+                  </span>
+                )}
                 {tab.count !== undefined && (
                   <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                     isActive ? 'bg-[#5C6652] text-white' : 'bg-[#E0E4D9] text-[#5C6652]'

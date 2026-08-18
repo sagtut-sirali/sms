@@ -6,6 +6,27 @@ export type PaymentStatus = 'paid' | 'partial' | 'pending' | 'overdue';
 
 export type PaymentMethod = 'Cash' | 'Bank Transfer' | 'EasyPaisa' | 'JazzCash' | 'Other';
 
+export interface StudentGroup {
+  id: string;
+  name: string; // e.g. "A-Levels Physics Alpha Batch", "O'Levels CAIE Stars Group"
+  description?: string;
+  grade: string; // e.g. "11th / XI year / AS / A1", "12th / XII year / A2", "O'levels Final"
+  subject: string; // e.g. "Physics (9702)", "Mathematics (9709)", "Physics & Math"
+  tuitionMode: TuitionMode; // 'home' | 'online'
+  timeSlot: string; // e.g. "4:00 PM - 5:30 PM (Mon, Wed, Fri)"
+  monthlyFeePerStudent: number;
+  studentIds: string[]; // Enrolled student IDs
+  avatarBg?: string;
+  meetingLinkOrLocation?: string; // Zoom / Google Meet Link or Physical Venue
+  createdAt: string;
+}
+
+export interface StudentSyllabusRecord {
+  status: 'pending' | 'in-progress' | 'completed' | 'revised';
+  completedDate?: string;
+  notes?: string;
+}
+
 export interface Student {
   id: string;
   rollNo: string;
@@ -14,8 +35,8 @@ export interface Student {
   parentName: string;
   parentPhone: string;
   email?: string;
-  grade: string; // e.g., "Class 9 (Matric)", "Class 10", "F.Sc Part 1", "F.Sc Part 2", "O Level (IGCSE)", "A Level"
-  board: string; // e.g., "CAIE (Cambridge)", "Federal Board (FBISE)", "Karachi Board (BIEK/BSEK)", "AKU-EB"
+  grade: string; // e.g., "8th / VIII", "9th / IX", "10th / X", "O'levels Final", "11th / XI year / AS / A1", "12th / XII year / A2"
+  board: string; // e.g., "Cambridge - CAIE", "Edexcel (Pearson)", "Karachi Board", "Federal Board", "AKU-EB", "Punjab Board"
   tuitionMode: TuitionMode; // 'home' or 'online'
   addressOrLocation?: string; // For home tuition: student address; For online: Zoom/Google Meet link or notes
   timeSlot: string; // e.g., "4:00 PM - 5:30 PM (Mon, Wed, Fri)"
@@ -25,7 +46,10 @@ export interface Student {
   joiningDate: string; // YYYY-MM-DD
   avatarBg?: string;
   notes?: string;
+  groupId?: string; // Primary group ID if assigned
+  groupName?: string; // Cached primary group name
   isActive: boolean;
+  syllabusProgress?: Record<string, StudentSyllabusRecord>; // [topicId]: record
 }
 
 export interface AttendanceRecord {
@@ -89,4 +113,13 @@ export interface FeeRecord {
   remarks?: string;
 }
 
-export type ActiveTab = 'overview' | 'students' | 'attendance' | 'syllabus' | 'progress' | 'fees';
+export type ActiveTab = 'overview' | 'students' | 'groups' | 'attendance' | 'syllabus' | 'progress' | 'fees' | 'sheets';
+
+export interface GoogleSheetsConfig {
+  spreadsheetId: string;
+  spreadsheetTitle: string;
+  spreadsheetUrl: string;
+  autoSync: boolean;
+  lastSyncedAt?: string;
+}
+

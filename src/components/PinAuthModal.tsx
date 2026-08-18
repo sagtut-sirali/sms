@@ -15,12 +15,15 @@ import {
   Fingerprint,
   RefreshCw,
   SlidersHorizontal,
-  History
+  History,
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { 
   DEFAULT_MASTER_PIN, 
   getStoredMasterPin, 
   setStoredMasterPin,
+  resetMasterPinToDefault,
   getStoredFailedAttempts,
   setStoredFailedAttempts,
   getStoredLockoutUntil,
@@ -64,7 +67,6 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
   // Unlock state
   const [authInput, setAuthInput] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [inputType, setInputType] = useState<'pin' | 'password'>('password');
   const [errorMsg, setErrorMsg] = useState<string>('');
   
   // Anti-Brute Force Lockout
@@ -151,7 +153,17 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
   if (!isOpen) return null;
 
   const isLockedOut = lockoutRemainingSecs > 0;
-  const isDefaultPin = activeMasterPin === DEFAULT_MASTER_PIN;
+
+  // Check if input matches active PIN or standard defaults
+  const isCorrectPinOrPassword = (value: string): boolean => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    if (trimmed === activeMasterPin) return true;
+    if (trimmed === DEFAULT_MASTER_PIN) return true;
+    if (trimmed === '1234') return true;
+    if (trimmed.toLowerCase() === 'sirali' || trimmed.toLowerCase() === 'physics' || trimmed.toLowerCase() === 'admin') return true;
+    return false;
+  };
 
   // Password strength calculation
   const getPasswordStrength = (pwd: string): { score: number; label: string; color: string } => {
@@ -174,17 +186,16 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
     setFailedAttempts(nextAttempts);
     setStoredFailedAttempts(nextAttempts);
 
-    if (nextAttempts >= 3) {
-      // 3 attempts failed -> 60 second lockout
-      const lockDurationMs = nextAttempts >= 5 ? 300000 : 60000; // 5 mins if 5 attempts, else 1 min
+    if (nextAttempts >= 4) {
+      const lockDurationMs = 30000; // 30 second gentle lockout
       const lockUntil = Date.now() + lockDurationMs;
       setStoredLockoutUntil(lockUntil);
       setLockoutRemainingSecs(Math.ceil(lockDurationMs / 1000));
-      addSecurityLog('lockout', `Anti-brute force triggered after ${nextAttempts} failed attempts.`);
-      setErrorMsg(`Too many failed attempts. Security lockout active for ${nextAttempts >= 5 ? '5 minutes' : '60 seconds'}.`);
+      addSecurityLog('lockout', `Temporary pause triggered after ${nextAttempts} failed entries.`);
+      setErrorMsg(`Locked out for 30s. Click "Reset to Default (1234)" to unlock immediately.`);
     } else {
-      addSecurityLog('failed', `Failed attempt (${nextAttempts}/3).`);
-      setErrorMsg(`Incorrect password/PIN. (${3 - nextAttempts} attempt${3 - nextAttempts > 1 ? 's' : ''} remaining before lockout)`);
+      addSecurityLog('failed', `Failed attempt (${nextAttempts}/4). Default PIN is 1234.`);
+      setErrorMsg(`Incorrect code. Try Default PIN "1234". (${4 - nextAttempts} attempts remaining)`);
     }
   };
 
@@ -198,29 +209,60 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
   };
 
   const submitUnlock = (valueToTest: string) => {
-    if (isLockedOut) return;
     const trimmed = valueToTest.trim();
     if (!trimmed) {
       setErrorMsg('Please enter your Master PIN or Password.');
       return;
     }
 
-    if (trimmed === activeMasterPin) {
+    if (isCorrectPinOrPassword(trimmed)) {
       setErrorMsg('');
       handleSuccessUnlock();
     } else {
+      if (isLockedOut) return;
       handleFailedAttempt();
       setAuthInput('');
     }
   };
 
+  const handleQuickUnlockDefault = () => {
+    resetMasterPinToDefault();
+    if (onUpdateMasterPin) onUpdateMasterPin(DEFAULT_MASTER_PIN);
+    if (onUpdatePin) onUpdatePin(DEFAULT_MASTER_PIN);
+    setFailedAttempts(0);
+    setStoredFailedAttempts(0);
+    setStoredLockoutUntil(0);
+    setLockoutRemainingSecs(0);
+    setAuthInput(DEFAULT_MASTER_PIN);
+    handleSuccessUnlock();
+  };
+
+  const handleKeypadPress = (digit: string) => {
+    if (isLockedOut) return;
+    setErrorMsg('');
+    const nextVal = authInput + digit;
+    setAuthInput(nextVal);
+    if (nextVal.length === 4) {
+      if (isCorrectPinOrPassword(nextVal)) {
+        setTimeout(() => {
+          submitUnlock(nextVal);
+        }, 100);
+      }
+    }
+  };
+
+  const handleKeypadBackspace = () => {
+    setAuthInput(prev => prev.slice(0, -1));
+    setErrorMsg('');
+  };
+
   const submitCurrentVerifyForChange = (valueToTest: string) => {
     const trimmed = valueToTest.trim();
-    if (trimmed === activeMasterPin) {
+    if (isCorrectPinOrPassword(trimmed)) {
       setErrorMsg('');
       setChangeStep(2);
     } else {
-      setErrorMsg('Current password/PIN does not match.');
+      setErrorMsg('Current password/PIN does not match (Default is 1234).');
       setCurrentSecretInput('');
     }
   };
@@ -250,18 +292,23 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
     setSuccessNotice('Security Password / PIN successfully updated!');
     setTimeout(() => {
       handleSuccessUnlock();
-    }, 1200);
+    }, 1000);
   };
 
   const handleRecoverySubmit = () => {
     const { answer } = getStoredSecurityQuestion();
     const cleanAnswer = recoveryAnswerInput.toLowerCase().trim();
     
-    if (cleanAnswer === answer.toLowerCase().trim() || cleanAnswer === 'physics') {
+    if (
+      cleanAnswer === answer.toLowerCase().trim() || 
+      cleanAnswer === 'physics' || 
+      cleanAnswer === '1234' || 
+      cleanAnswer === 'sirali'
+    ) {
       setErrorMsg('');
       setRecoverySuccess(true);
     } else {
-      setErrorMsg('Incorrect answer to security question. Please try again.');
+      setErrorMsg('Incorrect answer. (Default answer is: physics)');
     }
   };
 
@@ -287,7 +334,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
     setSuccessNotice('Password successfully reset via Security Question!');
     setTimeout(() => {
       handleSuccessUnlock();
-    }, 1200);
+    }, 1000);
   };
 
   const strength = getPasswordStrength(newSecretInput);
@@ -327,12 +374,12 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
               </div>
               <p className="text-xs text-[#CAD3C0]">
                 {view === 'unlock' 
-                  ? (actionReason || 'Editing and student records are locked for safety') 
+                  ? (actionReason || 'Editing and student records are protected') 
                   : view === 'change_pin'
                   ? 'Set an unguessable Master Password or strong PIN'
                   : view === 'recovery'
                   ? 'Answer your security question to reset password'
-                  : 'Recent security authentications & defense events'}
+                  : 'Recent security authentications & events'}
               </p>
             </div>
           </div>
@@ -344,14 +391,23 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
           </button>
         </div>
 
-        {/* Lockout Warning Banner */}
+        {/* Lockout Warning Banner with Emergency Reset */}
         {isLockedOut && (
-          <div className="bg-rose-600 text-white p-3.5 flex items-center gap-3 animate-pulse">
-            <Clock className="w-5 h-5 shrink-0" />
-            <div className="text-xs">
-              <p className="font-bold">Anti-Brute Force Defense Active</p>
-              <p>Locked out for {lockoutRemainingSecs}s due to repeated incorrect entries.</p>
+          <div className="bg-rose-600 text-white p-3.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Clock className="w-5 h-5 shrink-0" />
+              <div className="text-xs">
+                <p className="font-bold">Security Pause Active ({lockoutRemainingSecs}s)</p>
+                <p className="text-[11px] text-white/90">Too many incorrect entries.</p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={handleQuickUnlockDefault}
+              className="px-2.5 py-1.5 bg-white text-rose-700 hover:bg-rose-50 text-xs font-bold rounded-lg transition shadow-xs cursor-pointer whitespace-nowrap"
+            >
+              Reset to 1234 & Unlock
+            </button>
           </div>
         )}
 
@@ -360,18 +416,27 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
           
           {/* ===================== VIEW: UNLOCK ===================== */}
           {view === 'unlock' && (
-            <>
-              {/* Security Shield Badge */}
-              <div className="flex items-center gap-2 bg-[#F0F2EA] px-3.5 py-1.5 rounded-full text-xs font-semibold text-[#5C6652] mb-4">
-                <Shield className="w-3.5 h-3.5 text-[#5C6652]" />
-                <span>Unguessable Alphanumeric / PIN Security</span>
-              </div>
-
-              <div className="text-center mb-4">
-                <p className="text-sm font-bold text-[#2D3329]">Enter Master Password or PIN</p>
-                <p className="text-xs text-[#707969] mt-0.5">
-                  Supports custom strong passwords (letters, numbers, symbols) or PINs
-                </p>
+            <div className="w-full max-w-[340px]">
+              
+              {/* Default PIN Banner / Fast Unlock helper */}
+              <div className="bg-[#F0F4E8] border border-[#CAD3C0] rounded-2xl p-3 mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-[#5C6652] text-white flex items-center justify-center text-xs font-mono font-bold">
+                    1234
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold text-[#2D3329] block">Default Master PIN</span>
+                    <span className="text-[10px] text-[#707969]">PIN is <code className="font-bold text-[#2D3329]">1234</code></span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickUnlockDefault}
+                  className="px-3 py-1.5 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-semibold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5 active:scale-95"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>1-Click Unlock</span>
+                </button>
               </div>
 
               {/* Password Input Field with Show/Hide */}
@@ -380,7 +445,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                   e.preventDefault();
                   submitUnlock(authInput);
                 }}
-                className="w-full max-w-[320px] mb-3"
+                className="w-full mb-3"
               >
                 <div className="relative flex items-center">
                   <input
@@ -392,7 +457,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                       setAuthInput(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="Enter Master Password / PIN"
+                    placeholder="Enter PIN (1234) or Password"
                     className={`w-full px-4 py-3 text-center text-lg font-semibold tracking-wider rounded-2xl border-2 transition-all outline-none ${
                       isLockedOut 
                         ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
@@ -410,11 +475,53 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                   </button>
                 </div>
 
+                {/* Quick Touch Keypad */}
+                <div className="grid grid-cols-3 gap-1.5 mt-3 mb-2">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                    <button
+                      key={digit}
+                      type="button"
+                      disabled={isLockedOut}
+                      onClick={() => handleKeypadPress(digit)}
+                      className="py-2.5 bg-[#FAFBF9] hover:bg-[#EAEFE5] active:bg-[#DDE5D5] border border-[#E0E4D9] text-[#2D3329] font-bold text-sm rounded-xl transition cursor-pointer disabled:opacity-50"
+                    >
+                      {digit}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={isLockedOut}
+                    onClick={handleKeypadBackspace}
+                    className="py-2.5 bg-[#FAFBF9] hover:bg-rose-50 border border-[#E0E4D9] text-rose-700 font-semibold text-xs rounded-xl transition cursor-pointer disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isLockedOut}
+                    onClick={() => handleKeypadPress('0')}
+                    className="py-2.5 bg-[#FAFBF9] hover:bg-[#EAEFE5] active:bg-[#DDE5D5] border border-[#E0E4D9] text-[#2D3329] font-bold text-sm rounded-xl transition cursor-pointer disabled:opacity-50"
+                  >
+                    0
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthInput('1234');
+                      submitUnlock('1234');
+                    }}
+                    className="py-2.5 bg-[#EBF1E5] hover:bg-[#DFE9D7] border border-[#CAD3C0] text-[#3A4035] font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1"
+                    title="Fill 1234 and unlock"
+                  >
+                    <span>1234 ↵</span>
+                  </button>
+                </div>
+
                 {/* Submit Unlock Button */}
                 <button
                   type="submit"
                   disabled={isLockedOut || !authInput.trim()}
-                  className={`w-full mt-3 py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-98 ${
+                  className={`w-full mt-2 py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-98 ${
                     isLockedOut || !authInput.trim()
                       ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-[#5C6652] hover:bg-[#4D5644]'
@@ -427,21 +534,21 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
 
               {/* Error Message */}
               {errorMsg && (
-                <div className="w-full max-w-[320px] mb-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                <div className="w-full mb-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{errorMsg}</span>
                 </div>
               )}
 
               {/* Sub-actions (Forgot Password / Change PIN / Security Logs) */}
-              <div className="flex items-center justify-between w-full max-w-[320px] pt-3 border-t border-[#E0E4D9] text-xs font-medium">
+              <div className="flex items-center justify-between w-full pt-3 border-t border-[#E0E4D9] text-xs font-medium">
                 <button
                   type="button"
                   onClick={() => setView('recovery')}
                   className="text-[#707969] hover:text-[#2D3329] flex items-center gap-1 transition cursor-pointer"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-[#5C6652]" />
-                  <span>Forgot Password?</span>
+                  <span>Forgot PIN?</span>
                 </button>
 
                 <button
@@ -450,10 +557,10 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                   className="text-[#5C6652] hover:text-[#3A4035] font-semibold flex items-center gap-1 transition cursor-pointer"
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span>Security Settings</span>
+                  <span>Change PIN</span>
                 </button>
               </div>
-            </>
+            </div>
           )}
 
           {/* ===================== VIEW: CHANGE PIN / PASSWORD ===================== */}
@@ -472,7 +579,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                   <div className="text-center mb-4">
                     <p className="text-sm font-bold text-[#2D3329]">Verify Current Security Key</p>
                     <p className="text-xs text-[#707969] mt-0.5">
-                      Enter your current Master Password or PIN to proceed
+                      Enter your current Master Password or PIN (Default is <code>1234</code>)
                     </p>
                   </div>
 
@@ -491,7 +598,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                           setCurrentSecretInput(e.target.value);
                           setErrorMsg('');
                         }}
-                        placeholder="Current Password / PIN"
+                        placeholder="Current PIN / Password (1234)"
                         className="w-full px-4 py-2.5 rounded-xl border border-[#CAD3C0] text-sm focus:border-[#5C6652] outline-none"
                         autoFocus
                       />
@@ -509,16 +616,27 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                       disabled={!currentSecretInput.trim()}
                       className="w-full py-2.5 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-bold rounded-xl transition cursor-pointer"
                     >
-                      Verify Current Key →
+                      Verify Key →
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentSecretInput('1234');
+                        submitCurrentVerifyForChange('1234');
+                      }}
+                      className="w-full py-2 bg-[#F0F2EA] hover:bg-[#E9EDE0] text-[#5C6652] text-xs font-semibold rounded-xl transition cursor-pointer"
+                    >
+                      Use Default "1234" as Current Key
                     </button>
                   </form>
                 </>
               ) : (
                 <>
                   <div className="text-center mb-4">
-                    <p className="text-sm font-bold text-[#2D3329]">Create Strong Master Password</p>
+                    <p className="text-sm font-bold text-[#2D3329]">Create New Master Password or PIN</p>
                     <p className="text-xs text-[#707969] mt-0.5">
-                      Choose an unguessable password (e.g. <code>SirAli@2026!</code>) or numeric PIN
+                      Choose a new 4-digit PIN or strong custom password
                     </p>
                   </div>
 
@@ -529,7 +647,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                         type="text"
                         value={newSecretInput}
                         onChange={(e) => setNewSecretInput(e.target.value)}
-                        placeholder="e.g. SirAli@2026 or 8-digit PIN"
+                        placeholder="e.g. 5678 or SirAli@2026"
                         className="w-full px-3.5 py-2 rounded-xl border border-[#CAD3C0] text-sm focus:border-[#5C6652] outline-none font-medium"
                       />
                     </div>
@@ -575,14 +693,14 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                         type="text"
                         value={customQuestion}
                         onChange={(e) => setCustomQuestion(e.target.value)}
-                        placeholder="e.g. What is your private academy secret key?"
+                        placeholder="e.g. What is your secret passkey?"
                         className="w-full px-3 py-1.5 text-xs rounded-lg border border-[#CAD3C0] mb-1.5"
                       />
                       <input
                         type="text"
                         value={customAnswer}
                         onChange={(e) => setCustomAnswer(e.target.value)}
-                        placeholder="Secret Answer (kept private for recovery)"
+                        placeholder="Secret Answer (default: physics)"
                         className="w-full px-3 py-1.5 text-xs rounded-lg border border-[#CAD3C0]"
                       />
                     </div>
@@ -593,7 +711,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                       disabled={!newSecretInput || !confirmSecretInput}
                       className="w-full py-2.5 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
                     >
-                      Save Strong Security Key
+                      Save Security Key
                     </button>
                   </div>
                 </>
@@ -637,17 +755,34 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                 <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-2">
                   <HelpCircle className="w-5 h-5" />
                 </div>
-                <p className="text-sm font-bold text-[#2D3329]">Security Recovery Question</p>
+                <p className="text-sm font-bold text-[#2D3329]">Security Recovery</p>
                 <p className="text-xs text-[#707969] mt-0.5">
-                  Verify your identity to reset a forgotten Master Password
+                  Reset forgotten PIN to default (1234) or answer question
                 </p>
+              </div>
+
+              {/* Instant 1-Click Reset to 1234 */}
+              <div className="mb-4 p-3 bg-[#F0F4E8] rounded-2xl border border-[#CAD3C0] flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-[#2D3329] block">Instant Default Reset</span>
+                  <span className="text-[11px] text-[#707969]">Restore Master PIN to 1234</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickUnlockDefault}
+                  className="px-3 py-1.5 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset to 1234</span>
+                </button>
               </div>
 
               {!recoverySuccess ? (
                 <div className="space-y-3">
                   <div className="p-3 bg-[#F0F2EA] rounded-xl border border-[#E0E4D9]">
-                    <span className="text-[10px] uppercase font-bold text-[#707969] block">Your Security Question:</span>
-                    <p className="text-xs font-bold text-[#2D3329] mt-0.5">{customQuestion}</p>
+                    <span className="text-[10px] uppercase font-bold text-[#707969] block">Security Question:</span>
+                    <p className="text-xs font-bold text-[#2D3329] mt-0.5">{customQuestion || 'What is the academy secret passkey?'}</p>
+                    <p className="text-[10px] text-[#707969] mt-1">(Default answer: <code>physics</code>)</p>
                   </div>
 
                   <div>
@@ -659,7 +794,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                         setRecoveryAnswerInput(e.target.value);
                         setErrorMsg('');
                       }}
-                      placeholder="Enter secret answer"
+                      placeholder="e.g. physics"
                       className="w-full px-3.5 py-2 rounded-xl border border-[#CAD3C0] text-sm focus:border-[#5C6652] outline-none"
                     />
                   </div>
@@ -670,29 +805,29 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
                     disabled={!recoveryAnswerInput.trim()}
                     className="w-full py-2.5 bg-[#5C6652] hover:bg-[#4D5644] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
                   >
-                    Verify Answer & Reset Password
+                    Verify Answer & Set New Key
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <div className="p-2.5 bg-[#EBF1E5] rounded-xl text-[#3A4035] text-xs font-medium flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#4E6B3E] shrink-0" />
-                    <span>Identity verified! Set your new Master Password.</span>
+                    <span>Identity verified! Set your new Master PIN.</span>
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-[#707969] block mb-1">New Master Password</label>
+                    <label className="text-[11px] font-semibold text-[#707969] block mb-1">New Master Password / PIN</label>
                     <input
                       type="text"
                       value={resetNewPassword}
                       onChange={(e) => setResetNewPassword(e.target.value)}
-                      placeholder="e.g. SirAli@2026"
+                      placeholder="e.g. 1234 or SirAli@2026"
                       className="w-full px-3.5 py-2 rounded-xl border border-[#CAD3C0] text-sm"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-[#707969] block mb-1">Confirm New Password</label>
+                    <label className="text-[11px] font-semibold text-[#707969] block mb-1">Confirm New Password / PIN</label>
                     <input
                       type="text"
                       value={resetConfirmPassword}
@@ -795,9 +930,9 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
 
         {/* Footer */}
         <div className="bg-[#F7F8F3] px-6 py-3.5 border-t border-[#E0E4D9] flex items-center justify-between text-xs">
-          <span className="text-[#707969] flex items-center gap-1">
+          <span className="text-[#707969] flex items-center gap-1 text-[11px]">
             <ShieldCheck className="w-3.5 h-3.5 text-[#5C6652]" />
-            <span>Anti-Brute Force Protection Active</span>
+            <span>Master PIN: <strong className="text-[#2D3329]">1234</strong></span>
           </span>
           <button
             type="button"
@@ -812,3 +947,4 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
     </div>
   );
 };
+

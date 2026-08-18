@@ -1,8 +1,9 @@
-import { Student, AttendanceRecord, TestScore, SubjectSyllabus, FeeRecord } from '../types';
-import { INITIAL_STUDENTS, INITIAL_ATTENDANCE, INITIAL_TEST_SCORES, INITIAL_SYLLABUS, INITIAL_FEES } from '../data/initialData';
+import { Student, AttendanceRecord, TestScore, SubjectSyllabus, FeeRecord, StudentGroup } from '../types';
+import { INITIAL_STUDENTS, INITIAL_ATTENDANCE, INITIAL_TEST_SCORES, INITIAL_SYLLABUS, INITIAL_FEES, INITIAL_GROUPS } from '../data/initialData';
 
 const KEYS = {
   STUDENTS: 'sir_ali_prep_students_v1',
+  GROUPS: 'sir_ali_prep_groups_v1',
   ATTENDANCE: 'sir_ali_prep_attendance_v1',
   TESTS: 'sir_ali_prep_tests_v1',
   SYLLABUS: 'sir_ali_prep_syllabus_v1',
@@ -15,6 +16,7 @@ const KEYS = {
   SECURITY_ANSWER: 'sir_ali_prep_sec_a_v1',
   AUTO_LOCK_MINUTES: 'sir_ali_prep_autolock_mins_v1',
   SECURITY_LOGS: 'sir_ali_prep_sec_logs_v1',
+  SHEETS_CONFIG: 'sir_ali_prep_sheets_config_v1',
 };
 
 export const DEFAULT_MASTER_PIN = '1234';
@@ -59,6 +61,20 @@ export const getStoredStudents = (): Student[] => {
 
 export const setStoredStudents = (students: Student[]) => {
   safeSetItem(KEYS.STUDENTS, JSON.stringify(students));
+};
+
+export const getStoredGroups = (): StudentGroup[] => {
+  try {
+    const raw = safeGetItem(KEYS.GROUPS);
+    return raw ? JSON.parse(raw) : INITIAL_GROUPS;
+  } catch (e) {
+    console.error('Failed to parse groups from storage', e);
+    return INITIAL_GROUPS;
+  }
+};
+
+export const setStoredGroups = (groups: StudentGroup[]) => {
+  safeSetItem(KEYS.GROUPS, JSON.stringify(groups));
 };
 
 export const getStoredAttendance = (): AttendanceRecord[] => {
@@ -153,11 +169,22 @@ export const resetToInitialSampleData = () => {
 
 export const getStoredMasterPin = (): string => {
   const pin = safeGetItem(KEYS.MASTER_PIN);
-  return pin || DEFAULT_MASTER_PIN;
+  if (!pin || pin === 'undefined' || pin === 'null' || pin.trim() === '') {
+    return DEFAULT_MASTER_PIN;
+  }
+  return pin.trim();
 };
 
 export const setStoredMasterPin = (newPin: string) => {
-  safeSetItem(KEYS.MASTER_PIN, newPin);
+  safeSetItem(KEYS.MASTER_PIN, newPin.trim());
+};
+
+export const resetMasterPinToDefault = () => {
+  safeSetItem(KEYS.MASTER_PIN, DEFAULT_MASTER_PIN);
+  safeSetItem(KEYS.FAILED_ATTEMPTS, '0');
+  safeSetItem(KEYS.LOCKOUT_UNTIL, '0');
+  safeSetItem(KEYS.SECURITY_QUESTION, DEFAULT_SECURITY_QUESTION);
+  safeSetItem(KEYS.SECURITY_ANSWER, DEFAULT_SECURITY_ANSWER);
 };
 
 export const getStoredIsLocked = (): boolean => {
@@ -229,3 +256,33 @@ export const addSecurityLog = (type: SecurityLogItem['type'], details: string) =
     console.error('Failed to write security log', e);
   }
 };
+
+export interface StoredSheetsConfig {
+  spreadsheetId: string;
+  spreadsheetTitle: string;
+  spreadsheetUrl: string;
+  autoSync: boolean;
+  lastSyncedAt?: string;
+}
+
+export const getStoredSheetsConfig = (): StoredSheetsConfig | null => {
+  try {
+    const raw = safeGetItem(KEYS.SHEETS_CONFIG);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const setStoredSheetsConfig = (config: StoredSheetsConfig | null) => {
+  if (config) {
+    safeSetItem(KEYS.SHEETS_CONFIG, JSON.stringify(config));
+  } else {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(KEYS.SHEETS_CONFIG);
+      }
+    } catch (e) {}
+  }
+};
+

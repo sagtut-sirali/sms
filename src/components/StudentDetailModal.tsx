@@ -27,7 +27,8 @@ import {
   ChevronRight,
   Receipt,
   CreditCard,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { 
   Student, 
@@ -41,6 +42,13 @@ import {
   PaymentMethod,
   PaymentStatus 
 } from '../types';
+import { 
+  autoDetectChapterForTopic, 
+  searchCurriculumTopics, 
+  getTopicStatusForStudent, 
+  updateStudentTopicProgress,
+  CurriculumTopicMatch 
+} from '../data/curriculumDatabase';
 import { 
   formatCurrency, 
   getGradeBadgeColor, 
@@ -65,6 +73,7 @@ interface StudentDetailModalProps {
   onUpdateAttendance: (records: AttendanceRecord[]) => void;
   onUpdateTestScores: (scores: TestScore[]) => void;
   onUpdateSyllabus: (syllabus: SubjectSyllabus[]) => void;
+  onUpdateStudents?: (students: Student[]) => void;
   onUpdateFees: (fees: FeeRecord[]) => void;
   onEditStudent: (student: Student) => void;
   onDeleteStudent: (studentId: string) => void;
@@ -85,6 +94,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   onUpdateAttendance,
   onUpdateTestScores,
   onUpdateSyllabus,
+  onUpdateStudents,
   onUpdateFees,
   onEditStudent,
   onDeleteStudent,
@@ -200,6 +210,17 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   // Selected subject inside the syllabus tab
   const [selectedSyllabusSubjectId, setSelectedSyllabusSubjectId] = useState<string>('');
 
+  // Auto-detection results for topic modal
+  const [detectedChapterInfo, setDetectedChapterInfo] = useState<{
+    matched: boolean;
+    chapterNumber: string | number;
+    chapterTitle: string;
+    matchedTopicSuggestion?: string;
+    source: 'existing' | 'curriculum' | 'smart_fallback';
+    confidence: number;
+  } | null>(null);
+  const [curriculumSuggestions, setCurriculumSuggestions] = useState<CurriculumTopicMatch[]>([]);
+
   // Close modal on Escape key press
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -221,6 +242,50 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
       setSelectedSyllabusSubjectId(match ? match.id : syllabus[0].id);
     }
   }, [student, syllabus]);
+
+  // Auto-detect chapter/unit as user types in topic modal
+  useEffect(() => {
+    if (!topicModal.isOpen || topicModal.mode !== 'add') {
+      setDetectedChapterInfo(null);
+      setCurriculumSuggestions([]);
+      return;
+    }
+
+    const currentSubj = syllabus.find(s => s.id === topicModal.subjectId);
+    const chapters = currentSubj?.chapters || [];
+
+    if (topicModal.title.trim().length >= 2) {
+      const detection = autoDetectChapterForTopic(topicModal.title, currentSubj?.subject, chapters);
+      setDetectedChapterInfo(detection);
+
+      const suggestions = searchCurriculumTopics(topicModal.title, currentSubj?.subject, 4);
+      setCurriculumSuggestions(suggestions);
+
+      // Auto-link to existing chapter or set new chapter fields
+      const existingMatch = chapters.find(ch => 
+        ch.title.toLowerCase().includes(detection.chapterTitle.toLowerCase()) ||
+        detection.chapterTitle.toLowerCase().includes(ch.title.toLowerCase())
+      );
+
+      if (existingMatch) {
+        setTopicModal(prev => ({
+          ...prev,
+          chapterId: existingMatch.id,
+          isCreatingNewChapter: false,
+        }));
+      } else if (detection.matched) {
+        setTopicModal(prev => ({
+          ...prev,
+          isCreatingNewChapter: true,
+          newChapterNumber: detection.chapterNumber.toString(),
+          newChapterTitle: detection.chapterTitle,
+        }));
+      }
+    } else {
+      setDetectedChapterInfo(null);
+      setCurriculumSuggestions([]);
+    }
+  }, [topicModal.title, topicModal.subjectId, topicModal.isOpen, topicModal.mode, syllabus]);
 
   if (!student) return null;
 
@@ -253,7 +318,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   const totalFeeDue = studentFees.reduce((acc, f) => acc + f.dueAmount, 0);
   const latestFee = studentFees[0];
 
-  // Syllabus stats for student's subjects
+  // Syllabus stats for student's subjects (Student-Specific Progress Tracking)
   const studentSubjectsSyllabus = syllabus.filter(s => 
     student.subjects.some(sub => sub.toLowerCase().includes(s.subject.toLowerCase()) || s.subject.toLowerCase().includes(sub.toLowerCase()))
   );
@@ -266,7 +331,8 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
     currentSyllabusSubject.chapters.forEach(ch => {
       ch.topics.forEach(top => {
         totalSubjectTopics++;
-        if (top.status === 'completed' || top.status === 'revised') {
+        const topicStatus = getTopicStatusForStudent(student, top).status;
+        if (topicStatus === 'completed' || topicStatus === 'revised') {
           completedSubjectTopics++;
         }
       });
@@ -500,6 +566,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
 
     const subj = { ...updatedSyllabus[subjIdx] };
     let chapters = [...subj.chapters];
+    let createdOrUpdatedTopicId = topicModal.topicId || `top-${Date.now()}`;
 
     if (topicModal.mode === 'add') {
       let targetChapterId = topicModal.chapterId;
@@ -517,7 +584,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
       }
 
       const newTopic: SyllabusTopic = {
-        id: `top-${Date.now()}`,
+        id: createdOrUpdatedTopicId,
         title: topicModal.title.trim(),
         status: topicModal.status,
         completedDate: (topicModal.status === 'completed' || topicModal.status === 'revised') ? (topicModal.completedDate || todayDate) : undefined,
@@ -554,14 +621,39 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
     subj.chapters = chapters;
     updatedSyllabus[subjIdx] = subj;
     onUpdateSyllabus(updatedSyllabus);
+
+    // Save topic progress specifically for this student!
+    const updatedStudent = updateStudentTopicProgress(
+      student,
+      createdOrUpdatedTopicId,
+      topicModal.status,
+      (topicModal.status === 'completed' || topicModal.status === 'revised') ? (topicModal.completedDate || todayDate) : undefined,
+      topicModal.notes.trim() || undefined
+    );
+    onEditStudent(updatedStudent);
+
     setTopicModal(prev => ({ ...prev, isOpen: false }));
   };
 
-  const handleToggleTopicStatus = (subjectId: string, chapterId: string, topicId: string, currentStatus: string) => {
+  const handleToggleTopicStatus = (subjectId: string, chapterId: string, topicId: string, currentTopic: SyllabusTopic) => {
+    const studentStatusInfo = getTopicStatusForStudent(student, currentTopic);
     const cycle: ('pending' | 'in-progress' | 'completed' | 'revised')[] = ['pending', 'in-progress', 'completed', 'revised'];
-    const nextIdx = (cycle.indexOf(currentStatus as any) + 1) % cycle.length;
+    const nextIdx = (cycle.indexOf(studentStatusInfo.status) + 1) % cycle.length;
     const nextStatus = cycle[nextIdx];
 
+    const completedDate = (nextStatus === 'completed' || nextStatus === 'revised') ? todayDate : undefined;
+
+    // Update student's specific record
+    const updatedStudent = updateStudentTopicProgress(
+      student,
+      topicId,
+      nextStatus,
+      completedDate,
+      currentTopic.notes
+    );
+    onEditStudent(updatedStudent);
+
+    // Also sync with syllabus state
     const updated = syllabus.map(subj => {
       if (subj.id !== subjectId) return subj;
       const chs = subj.chapters.map(ch => {
@@ -571,7 +663,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
           return {
             ...top,
             status: nextStatus,
-            completedDate: (nextStatus === 'completed' || nextStatus === 'revised') ? (top.completedDate || todayDate) : undefined,
+            completedDate,
           };
         });
         return { ...ch, topics: tops };
@@ -1269,53 +1361,65 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                         {ch.topics.length === 0 ? (
                           <div className="p-3 text-center text-[#707969] text-xs">No topics in this chapter yet.</div>
                         ) : (
-                          ch.topics.map((top) => (
-                            <div key={top.id} className="p-3 hover:bg-[#FAFBF9] transition flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                              <div className="flex-1">
-                                <div className="font-medium text-[#2D3329]">{top.title}</div>
-                                {top.completedDate && (
-                                  <span className="text-[10px] text-[#707969]">Completed: {top.completedDate}</span>
-                                )}
-                                {top.notes && (
-                                  <span className="text-[10px] text-[#5C6652] italic block">Notes: {top.notes}</span>
-                                )}
+                          ch.topics.map((top) => {
+                            const studentTopicInfo = getTopicStatusForStudent(student, top);
+                            const currentStatus = studentTopicInfo.status;
+
+                            return (
+                              <div key={top.id} className="p-3 hover:bg-[#FAFBF9] transition flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-[#2D3329]">{top.title}</span>
+                                    {studentTopicInfo.isStudentSpecific && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#E8EDEB] text-[#3D5A5B] border border-[#CAD8D5]">
+                                        Student Record
+                                      </span>
+                                    )}
+                                  </div>
+                                  {studentTopicInfo.completedDate && (
+                                    <span className="text-[10px] text-[#707969]">Completed: {studentTopicInfo.completedDate}</span>
+                                  )}
+                                  {(studentTopicInfo.notes || top.notes) && (
+                                    <span className="text-[10px] text-[#5C6652] italic block">Notes: {studentTopicInfo.notes || top.notes}</span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 self-end sm:self-center">
+                                  {/* 1-Click Status Badge */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleTopicStatus(currentSyllabusSubject.id, ch.id, top.id, top)}
+                                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize border transition cursor-pointer hover:opacity-80 active:scale-95 ${
+                                      currentStatus === 'completed' ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]' :
+                                      currentStatus === 'revised' ? 'bg-[#E8EDEB] text-[#3D5A5B] border-[#CAD8D5]' :
+                                      currentStatus === 'in-progress' ? 'bg-[#FAF0E4] text-[#8C5D39] border-[#EAD5C3]' : 'bg-[#F0F2EA] text-[#707969] border-[#E0E4D9]'
+                                    }`}
+                                    title="Click to toggle status for this student (Pending / In Progress / Completed / Revised)"
+                                  >
+                                    {currentStatus.replace('-', ' ')} ↻
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditTopic(currentSyllabusSubject.id, ch.id, top)}
+                                    className="p-1 text-[#707969] hover:text-[#2D3329] hover:bg-[#F0F2EA] rounded-lg transition cursor-pointer"
+                                    title="Edit topic"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTopic(currentSyllabusSubject.id, ch.id, top.id, top.title)}
+                                    className="p-1 text-[#707969] hover:text-[#995353] hover:bg-[#FCECEC] rounded-lg transition cursor-pointer"
+                                    title="Delete topic"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-
-                              <div className="flex items-center gap-2 self-end sm:self-center">
-                                {/* 1-Click Status Badge */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTopicStatus(currentSyllabusSubject.id, ch.id, top.id, top.status)}
-                                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize border transition cursor-pointer hover:opacity-80 active:scale-95 ${
-                                    top.status === 'completed' ? 'bg-[#E9EDE0] text-[#3D4736] border-[#CAD3C0]' :
-                                    top.status === 'revised' ? 'bg-[#E8EDEB] text-[#3D5A5B] border-[#CAD8D5]' :
-                                    top.status === 'in-progress' ? 'bg-[#FAF0E4] text-[#8C5D39] border-[#EAD5C3]' : 'bg-[#F0F2EA] text-[#707969] border-[#E0E4D9]'
-                                  }`}
-                                  title="Click to toggle status (Pending / In Progress / Completed / Revised)"
-                                >
-                                  {top.status.replace('-', ' ')} ↻
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditTopic(currentSyllabusSubject.id, ch.id, top)}
-                                  className="p-1 text-[#707969] hover:text-[#2D3329] hover:bg-[#F0F2EA] rounded-lg transition cursor-pointer"
-                                  title="Edit topic"
-                                >
-                                  <Edit className="w-3.5 h-3.5" />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteTopic(currentSyllabusSubject.id, ch.id, top.id, top.title)}
-                                  className="p-1 text-[#707969] hover:text-[#995353] hover:bg-[#FCECEC] rounded-lg transition cursor-pointer"
-                                  title="Delete topic"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     </div>
@@ -1719,16 +1823,72 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             </div>
 
             <form onSubmit={handleSaveTopicForm} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-[#2D3329] mb-1">Topic Title *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Electromagnetic Induction - Faraday's Law"
+                  value={topicModal.title}
+                  onChange={(e) => setTopicModal(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
+                />
+
+                {/* Auto-detected Chapter Preview */}
+                {topicModal.mode === 'add' && detectedChapterInfo && (
+                  <div className="mt-2 p-2.5 bg-[#F4F6F0] rounded-xl border border-[#D5DDD0] flex items-start gap-2 text-xs">
+                    <Sparkles className="w-4 h-4 text-[#5C6652] shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-[#2D3329]">
+                          Auto-Linked: Ch {detectedChapterInfo.chapterNumber}: {detectedChapterInfo.chapterTitle}
+                        </span>
+                        <span className="text-[10px] bg-[#E0E4D9] text-[#42473E] px-1.5 py-0.2 rounded font-semibold">
+                          {detectedChapterInfo.source === 'curriculum' ? 'Standard Curriculum' : 'Matched Chapter'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#707969] mt-0.5">
+                        This topic will automatically be grouped into Chapter {detectedChapterInfo.chapterNumber} and saved to {student.name}'s progress.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Curriculum suggestions pills */}
+                {topicModal.mode === 'add' && curriculumSuggestions.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <span className="text-[10px] font-semibold text-[#707969] block">Standard Curriculum Suggestions:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {curriculumSuggestions.map((sug, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setTopicModal(prev => ({
+                              ...prev,
+                              title: sug.topicTitle,
+                            }));
+                          }}
+                          className="px-2 py-0.5 bg-[#FAFBF9] hover:bg-[#F0F2EA] border border-[#E0E4D9] text-[#42473E] rounded-md text-[10px] text-left transition cursor-pointer"
+                        >
+                          Ch {sug.chapterNumber}: {sug.topicTitle}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {topicModal.mode === 'add' && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="font-semibold text-[#2D3329]">Chapter</label>
+                    <label className="font-semibold text-[#2D3329]">Chapter Assignment</label>
                     <button
                       type="button"
                       onClick={() => setTopicModal(prev => ({ ...prev, isCreatingNewChapter: !prev.isCreatingNewChapter }))}
                       className="text-[11px] text-[#5C6652] font-semibold hover:underline"
                     >
-                      {topicModal.isCreatingNewChapter ? 'Choose Existing Chapter' : '+ Create New Chapter'}
+                      {topicModal.isCreatingNewChapter ? 'Choose Existing Chapter' : '+ Create Custom Chapter'}
                     </button>
                   </div>
 
@@ -1768,19 +1928,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               )}
 
               <div>
-                <label className="block font-semibold text-[#2D3329] mb-1">Topic Title *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Electromagnetic Induction - Faraday's Law"
-                  value={topicModal.title}
-                  onChange={(e) => setTopicModal(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#2D3329] mb-1">Status</label>
+                <label className="block font-semibold text-[#2D3329] mb-1">Status for {student.name}</label>
                 <div className="grid grid-cols-4 gap-2">
                   {(['pending', 'in-progress', 'completed', 'revised'] as const).map((st) => (
                     <button
@@ -1808,6 +1956,10 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
                   onChange={(e) => setTopicModal(prev => ({ ...prev, notes: e.target.value }))}
                   className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
                 />
+              </div>
+
+              <div className="p-2.5 bg-[#FAFBF9] rounded-xl border border-[#E0E4D9] text-[11px] text-[#707969]">
+                ✓ Saving will record this topic under {currentSyllabusSubject?.subject || 'the curriculum'} and save progress specifically for <strong>{student.name}</strong>.
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E0E4D9]">

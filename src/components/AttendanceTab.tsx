@@ -12,10 +12,13 @@ import {
   Laptop, 
   Search, 
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Users,
+  X
 } from 'lucide-react';
 import { Student, AttendanceRecord, AttendanceStatus, TuitionMode } from '../types';
 import { generateWhatsAppAbsenceAlert } from '../utils/formatters';
+import { Pagination } from './Pagination';
 
 interface AttendanceTabProps {
   students: Student[];
@@ -35,20 +38,43 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
   onSelectStudent,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(todayDate);
+  const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('all');
   const [topicCoveredGlobal, setTopicCoveredGlobal] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'daily' | 'monthly'>('daily');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // Keep selectedDate updated with todayDate if it was set to today's date
   useEffect(() => {
     setSelectedDate(todayDate);
   }, [todayDate]);
 
-  // Filter students based on mode
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedModeFilter, selectedStudentFilter, activeSubTab]);
+
+  // Filter students based on mode & student selection
   const filteredStudents = useMemo(() => {
-    return students.filter(s => 
-      selectedModeFilter === 'all' ? true : s.tuitionMode === selectedModeFilter
-    );
-  }, [students, selectedModeFilter]);
+    return students.filter(s => {
+      if (selectedModeFilter !== 'all' && s.tuitionMode !== selectedModeFilter) {
+        return false;
+      }
+      if (selectedStudentFilter !== 'all' && s.id !== selectedStudentFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [students, selectedModeFilter, selectedStudentFilter]);
+
+  // Paginated students for daily/monthly view
+  const totalStudentPages = Math.ceil(filteredStudents.length / pageSize) || 1;
+  const paginatedStudents = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(startIdx, startIdx + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   // Current day's records
   const currentDayRecords = useMemo(() => {
@@ -134,7 +160,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
       {/* Attendance Header & Controls */}
       <div className="bg-white rounded-2xl p-5 border border-[#E0E4D9] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         
-        {/* Date Selector & Mode */}
+        {/* Date Selector, Student Dropdown & Mode */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 bg-[#F7F8F3] border border-[#E0E4D9] rounded-xl px-3 py-2 text-xs font-semibold text-[#2D3329]">
             <Calendar className="w-4 h-4 text-[#5C6652]" />
@@ -157,6 +183,34 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               </button>
             )}
           </div>
+
+          {/* Student Filter Dropdown */}
+          <div className="flex items-center gap-2 bg-[#F7F8F3] border border-[#CAD3C0] rounded-xl px-3 py-2 text-xs font-semibold text-[#2D3329]">
+            <Users className="w-4 h-4 text-[#5C6652]" />
+            <span>Student:</span>
+            <select
+              id="attendance-student-filter-select"
+              value={selectedStudentFilter}
+              onChange={(e) => setSelectedStudentFilter(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold text-[#2D3329] focus:outline-none cursor-pointer pr-1"
+            >
+              <option value="all">All Registered Students ({students.length})</option>
+              {students.map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.rollNo} • {s.grade})</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedStudentFilter !== 'all' && (
+            <button
+              onClick={() => setSelectedStudentFilter('all')}
+              className="text-xs text-[#5C6652] hover:text-[#2D3329] bg-[#F0F2EA] hover:bg-[#E0E4D9] px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 cursor-pointer"
+              title="Show all registered students"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Show All</span>
+            </button>
+          )}
 
           <div className="inline-flex bg-[#F0F2EA] p-1 rounded-xl border border-[#E0E4D9] text-xs">
             <button
@@ -251,12 +305,12 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
           </div>
 
           <div className="divide-y divide-[#E0E4D9]">
-            {filteredStudents.length === 0 ? (
+            {paginatedStudents.length === 0 ? (
               <div className="p-12 text-center text-[#707969] text-xs">
                 No students enrolled for selected filter.
               </div>
             ) : (
-              filteredStudents.map((student) => {
+              paginatedStudents.map((student) => {
                 const record = attendance.find(a => a.studentId === student.id && a.date === selectedDate);
                 const currentStatus: AttendanceStatus | 'unmarked' = record ? record.status : 'unmarked';
                 const topic = record?.topicCovered || '';
@@ -274,9 +328,16 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                       onClick={() => onSelectStudent && onSelectStudent(student)}
                       title={onSelectStudent ? `Click to manage all activities for ${student.name}` : undefined}
                     >
-                      <div className="w-10 h-10 rounded-2xl bg-[#5C6652] text-[#F7F8F3] font-bold text-xs flex items-center justify-center group-hover:bg-[#4E5745] transition">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStudentFilter(student.id);
+                        }}
+                        className="w-10 h-10 rounded-2xl bg-[#5C6652] text-[#F7F8F3] font-bold text-xs flex items-center justify-center hover:bg-[#4E5745] transition cursor-pointer"
+                        title={`Filter to only ${student.name}`}
+                      >
                         {student.name.slice(0, 2).toUpperCase()}
-                      </div>
+                      </button>
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-[#2D3329] text-sm font-serif group-hover:text-[#5C6652] group-hover:underline transition">{student.name}</span>
@@ -380,6 +441,21 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               })
             )}
           </div>
+
+          {/* Daily Pagination */}
+          {filteredStudents.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalStudentPages}
+              totalItems={filteredStudents.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[5, 10, 15, 25]}
+              itemName="students"
+              idPrefix="attendance-daily"
+            />
+          )}
         </div>
       )}
 
@@ -407,7 +483,7 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E0E4D9]">
-                {filteredStudents.map((student) => {
+                {paginatedStudents.map((student) => {
                   const studentLogs = attendance.filter(a => a.studentId === student.id);
                   const pCount = studentLogs.filter(a => a.status === 'present').length;
                   const aCount = studentLogs.filter(a => a.status === 'absent').length;
@@ -418,9 +494,13 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
                   return (
                     <tr key={student.id} className="hover:bg-[#F9FAF7]">
                       <td className="p-3 font-semibold text-[#2D3329] flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-[#5C6652] text-white text-[10px] flex items-center justify-center font-bold">
+                        <button
+                          onClick={() => setSelectedStudentFilter(student.id)}
+                          className="w-6 h-6 rounded-lg bg-[#5C6652] text-white text-[10px] flex items-center justify-center font-bold hover:bg-[#4E5745] cursor-pointer"
+                          title={`Filter to ${student.name}`}
+                        >
                           {student.name[0]}
-                        </div>
+                        </button>
                         <span>{student.name}</span>
                       </td>
                       <td className="p-3 text-[#707969]">{student.grade}</td>
@@ -441,9 +521,25 @@ export const AttendanceTab: React.FC<AttendanceTabProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Monthly Pagination */}
+          {filteredStudents.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalStudentPages}
+              totalItems={filteredStudents.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[5, 10, 15, 25]}
+              itemName="students"
+              idPrefix="attendance-monthly"
+            />
+          )}
         </div>
       )}
 
     </div>
   );
 };
+

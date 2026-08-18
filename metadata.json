@@ -1,6 +1,6 @@
 {
   "name": "Sir Ali Preparations - Student Management System",
-  "description": "Comprehensive student management system for Sir Ali Preparations to manage home & online tuition batches, attendance, student progress & test scores, syllabus topic tracking, and fee payment records.",
+  "description": "Comprehensive student management system for Sir Ali Preparations with Google Sheets live database synchronization, manageable spreadsheet tabs, batch management, attendance tracking, test scores, syllabus progress, and fee records.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

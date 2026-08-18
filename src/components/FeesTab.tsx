@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   DollarSign, 
   CheckCircle2, 
@@ -13,10 +13,13 @@ import {
   CreditCard,
   Building,
   Smartphone,
-  Check
+  Check,
+  Users,
+  X
 } from 'lucide-react';
 import { Student, FeeRecord, PaymentStatus, TuitionMode } from '../types';
 import { formatCurrency, generateWhatsAppFeeReminder, getCurrentMonthYearString } from '../utils/formatters';
+import { Pagination } from './Pagination';
 
 interface FeesTabProps {
   students: Student[];
@@ -37,8 +40,18 @@ export const FeesTab: React.FC<FeesTabProps> = ({
 }) => {
   const currentMonth = getCurrentMonthYearString();
   const [selectedMonth, setSelectedMonth] = useState<string>(() => currentMonth);
+  const [selectedStudentFilter, setSelectedStudentFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Reset page to 1 on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedMonth, selectedStudentFilter, statusFilter, searchQuery, selectedModeFilter]);
 
   const availableMonths = useMemo(() => {
     const list = Array.from(new Set(fees.map(f => f.month)));
@@ -79,9 +92,12 @@ export const FeesTab: React.FC<FeesTabProps> = ({
       });
   }, [students, fees, selectedMonth, selectedModeFilter]);
 
-  // Filter by status & search
+  // Filter by student, status & search
   const filteredEntries = useMemo(() => {
     return monthFeeEntries.filter(({ student, fee }) => {
+      if (selectedStudentFilter !== 'all' && student.id !== selectedStudentFilter) {
+        return false;
+      }
       if (statusFilter !== 'all' && fee.status !== statusFilter) {
         return false;
       }
@@ -94,7 +110,14 @@ export const FeesTab: React.FC<FeesTabProps> = ({
       }
       return true;
     });
-  }, [monthFeeEntries, statusFilter, searchQuery]);
+  }, [monthFeeEntries, selectedStudentFilter, statusFilter, searchQuery]);
+
+  // Paginated records
+  const totalFeePages = Math.ceil(filteredEntries.length / pageSize) || 1;
+  const paginatedEntries = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return filteredEntries.slice(startIdx, startIdx + pageSize);
+  }, [filteredEntries, currentPage, pageSize]);
 
   // Aggregate stats
   const totalExpected = monthFeeEntries.reduce((acc, { fee }) => acc + (fee.totalFee - fee.discount), 0);
@@ -180,7 +203,7 @@ export const FeesTab: React.FC<FeesTabProps> = ({
 
       </div>
 
-      {/* Filter & Search Bar */}
+      {/* Filter & Search Bar with Student Dropdown */}
       <div className="bg-white rounded-2xl p-4 border border-[#E0E4D9] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-4 h-4 text-[#707969] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -193,24 +216,57 @@ export const FeesTab: React.FC<FeesTabProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-1.5 bg-[#F0F2EA] p-1 rounded-xl text-xs border border-[#E0E4D9]">
-          {['all', 'paid', 'partial', 'overdue', 'pending'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-lg font-semibold capitalize transition cursor-pointer ${
-                statusFilter === st 
-                  ? 'bg-white text-[#2D3329] shadow-xs border border-[#CAD3C0]' 
-                  : 'text-[#707969] hover:text-[#2D3329]'
-              }`}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Student Filter Dropdown */}
+          <div className="flex items-center gap-2 bg-[#F7F8F3] border border-[#CAD3C0] rounded-xl px-3 py-1.5 shadow-2xs">
+            <Users className="w-4 h-4 text-[#5C6652]" />
+            <label htmlFor="fees-student-filter-select" className="text-xs font-semibold text-[#42473E] whitespace-nowrap">
+              Student:
+            </label>
+            <select
+              id="fees-student-filter-select"
+              value={selectedStudentFilter}
+              onChange={(e) => setSelectedStudentFilter(e.target.value)}
+              className="bg-transparent border-none text-xs font-bold text-[#2D3329] focus:outline-none cursor-pointer pr-1"
             >
-              {st}
+              <option value="all">All Registered Students ({students.length})</option>
+              {students.map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.rollNo} • {s.grade})</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedStudentFilter !== 'all' && (
+            <button
+              onClick={() => setSelectedStudentFilter('all')}
+              className="text-xs text-[#5C6652] hover:text-[#2D3329] bg-[#F0F2EA] hover:bg-[#E0E4D9] px-2.5 py-1.5 rounded-xl font-medium transition flex items-center gap-1 cursor-pointer"
+              title="Show all registered students"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Show All</span>
             </button>
-          ))}
+          )}
+
+          {/* Status filter buttons */}
+          <div className="flex items-center gap-1 bg-[#F0F2EA] p-1 rounded-xl text-xs border border-[#E0E4D9]">
+            {['all', 'paid', 'partial', 'overdue', 'pending'].map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-2.5 py-1 rounded-lg font-semibold capitalize transition cursor-pointer ${
+                  statusFilter === st 
+                    ? 'bg-white text-[#2D3329] shadow-xs border border-[#CAD3C0]' 
+                    : 'text-[#707969] hover:text-[#2D3329]'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Fees Ledger Table */}
+      {/* Fees Ledger Table with Pagination */}
       <div className="bg-white rounded-2xl border border-[#E0E4D9] shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -228,14 +284,14 @@ export const FeesTab: React.FC<FeesTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E0E4D9]">
-              {filteredEntries.length === 0 ? (
+              {paginatedEntries.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-10 text-center text-[#707969]">
                     No fee records found matching criteria.
                   </td>
                 </tr>
               ) : (
-                filteredEntries.map(({ student, fee }) => {
+                paginatedEntries.map(({ student, fee }) => {
                   const isPaid = fee.status === 'paid';
                   const isOverdue = fee.status === 'overdue';
                   const isPartial = fee.status === 'partial';
@@ -246,9 +302,13 @@ export const FeesTab: React.FC<FeesTabProps> = ({
                     <tr key={fee.id} className="hover:bg-[#F9FAF7] transition">
                       <td className="py-3.5 px-4 font-semibold text-[#2D3329]">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-[#5C6652] text-[#F7F8F3] font-bold text-[10px] flex items-center justify-center">
+                          <button
+                            onClick={() => setSelectedStudentFilter(student.id)}
+                            className="w-7 h-7 rounded-lg bg-[#5C6652] text-[#F7F8F3] font-bold text-[10px] flex items-center justify-center hover:bg-[#3D4736] transition cursor-pointer"
+                            title={`Filter ledger for ${student.name}`}
+                          >
                             {student.name[0]}
-                          </div>
+                          </button>
                           <div>
                             <div>{student.name}</div>
                             <div className="text-[10px] text-[#707969] font-normal">{student.rollNo}</div>
@@ -319,31 +379,33 @@ export const FeesTab: React.FC<FeesTabProps> = ({
                           {/* Record Payment Button */}
                           <button
                             onClick={() => onOpenRecordFee(student, fee)}
-                            title="Update Payment / Record Amount"
-                            className="p-1.5 text-[#707969] hover:text-[#3D4736] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                            className="bg-[#F0F2EA] hover:bg-[#E0E4D9] text-[#2D3329] px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer border border-[#CAD3C0]"
+                            title="Record or Update Payment"
                           >
-                            <DollarSign className="w-4 h-4" />
+                            Update
                           </button>
 
-                          {/* Generate Receipt */}
-                          <button
-                            onClick={() => onOpenReceiptModal(student, fee)}
-                            title="Print / View Receipt"
-                            className="p-1.5 text-[#707969] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
-                          >
-                            <Receipt className="w-4 h-4" />
-                          </button>
+                          {/* Receipt Modal */}
+                          {fee.paidAmount > 0 && (
+                            <button
+                              onClick={() => onOpenReceiptModal(student, fee)}
+                              className="p-1.5 text-[#5C6652] hover:text-[#2D3329] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer"
+                              title="Generate & View Fee Receipt"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                            </button>
+                          )}
 
-                          {/* WhatsApp Reminder (Restricted: Visible ONLY when admin is logged in) */}
-                          {!isLocked && fee.dueAmount > 0 && (
+                          {/* WhatsApp Reminder Button */}
+                          {!isPaid && (
                             <a
                               href={waReminderLink}
                               target="_blank"
                               rel="noopener noreferrer"
-                              title="Send WhatsApp Fee Reminder to Parent"
-                              className="p-1.5 text-[#5C6652] hover:text-[#3D4736] hover:bg-[#E9EDE0] rounded-lg transition cursor-pointer inline-flex items-center"
+                              className="p-1.5 text-[#8C5D39] hover:text-[#5E381E] hover:bg-[#FAF0E4] rounded-lg transition cursor-pointer"
+                              title="Send Fee Reminder on WhatsApp"
                             >
-                              <Send className="w-4 h-4" />
+                              <Send className="w-3.5 h-3.5" />
                             </a>
                           )}
                         </div>
@@ -355,6 +417,21 @@ export const FeesTab: React.FC<FeesTabProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {filteredEntries.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalFeePages}
+            totalItems={filteredEntries.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            pageSizeOptions={[5, 10, 15, 25]}
+            itemName="fee records"
+            idPrefix="fees-ledger"
+          />
+        )}
       </div>
 
     </div>

@@ -16,14 +16,28 @@ import {
   setStoredSyllabus, 
   getStoredFees, 
   setStoredFees,
+  getStoredGroups,
+  setStoredGroups,
   getStoredMasterPin,
   setStoredMasterPin,
   getStoredIsLocked,
   setStoredIsLocked,
+  getStoredSheetsConfig,
+  setStoredSheetsConfig,
   exportAllDataJSON,
   resetToInitialSampleData 
 } from './utils/storage';
-import { Student, AttendanceRecord, TestScore, SubjectSyllabus, FeeRecord, ActiveTab, TuitionMode } from './types';
+import { 
+  Student, 
+  AttendanceRecord, 
+  TestScore, 
+  SubjectSyllabus, 
+  FeeRecord, 
+  ActiveTab, 
+  TuitionMode, 
+  StudentGroup,
+  GoogleSheetsConfig 
+} from './types';
 import { Header } from './components/Header';
 import { OverviewTab } from './components/OverviewTab';
 import { StudentsTab } from './components/StudentsTab';
@@ -31,6 +45,8 @@ import { AttendanceTab } from './components/AttendanceTab';
 import { SyllabusTab } from './components/SyllabusTab';
 import { ProgressTab } from './components/ProgressTab';
 import { FeesTab } from './components/FeesTab';
+import { GroupsTab } from './components/GroupsTab';
+import { GoogleSheetsTab } from './components/GoogleSheetsTab';
 import { StudentDetailModal } from './components/StudentDetailModal';
 import { AddStudentModal } from './components/AddStudentModal';
 import { RecordFeeModal } from './components/RecordFeeModal';
@@ -40,6 +56,9 @@ import { ReportCardModal } from './components/ReportCardModal';
 import { PinAuthModal } from './components/PinAuthModal';
 import { getTodayDateString } from './utils/formatters';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { User } from 'firebase/auth';
+import { initAuth, getAccessToken } from './services/googleAuth';
+import { syncAllTablesToGoogleSheets, FullTuitionDataset } from './services/googleSheets';
 
 export default function App() {
   // Current system date dynamically initialized and automatically updated daily
@@ -65,6 +84,7 @@ export default function App() {
 
   // Core Data States with localStorage persistence
   const [students, setStudents] = useState<Student[]>(() => getStoredStudents());
+  const [groups, setGroups] = useState<StudentGroup[]>(() => getStoredGroups());
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => getStoredAttendance());
   const [testScores, setTestScores] = useState<TestScore[]>(() => getStoredTests());
   const [syllabus, setSyllabus] = useState<SubjectSyllabus[]>(() => getStoredSyllabus());
@@ -113,6 +133,38 @@ export default function App() {
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Google Sheets DB & Auth States
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [sheetsConfig, setSheetsConfig] = useState<GoogleSheetsConfig | null>(() => getStoredSheetsConfig());
+
+  // Listen for Google / Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user) => setCurrentUser(user),
+      () => setCurrentUser(null)
+    );
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
+  const handleUpdateSheetsConfig = (newConfig: GoogleSheetsConfig | null) => {
+    setSheetsConfig(newConfig);
+    setStoredSheetsConfig(newConfig);
+  };
+
+  const handleApplyPulledData = (dataset: FullTuitionDataset) => {
+    requireUnlock('Enter PIN to restore and replace database from Google Sheets', () => {
+      if (dataset.students.length > 0) setStudents(dataset.students);
+      if (dataset.groups.length > 0) setGroups(dataset.groups);
+      if (dataset.attendance.length > 0) setAttendance(dataset.attendance);
+      if (dataset.testScores.length > 0) setTestScores(dataset.testScores);
+      if (dataset.syllabus.length > 0) setSyllabus(dataset.syllabus);
+      if (dataset.fees.length > 0) setFees(dataset.fees);
+      showToast('Master dataset updated from Google Sheets.');
+    });
+  };
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
@@ -124,6 +176,10 @@ export default function App() {
   useEffect(() => {
     setStoredStudents(students);
   }, [students]);
+
+  useEffect(() => {
+    setStoredGroups(groups);
+  }, [groups]);
 
   useEffect(() => {
     setStoredAttendance(attendance);
@@ -141,7 +197,7 @@ export default function App() {
     setStoredFees(fees);
   }, [fees]);
 
-  // Handlers for Students
+  // Unlock check
   const requireUnlock = (reason: string, action?: () => void): boolean => {
     if (!isLocked) {
       if (action) action();
@@ -188,7 +244,8 @@ export default function App() {
     showToast('Master Security Password updated successfully! Admin Mode unlocked.');
   };
 
-  const handleSaveStudent = (savedStudent: Student) => {
+  // Student CRUD
+  const handleSaveStudent = (savedStudent: Student, assignedGroupId?: string) => {
     const exists = students.some(s => s.id === savedStudent.id);
     let updated: Student[];
     if (exists) {
@@ -204,6 +261,21 @@ export default function App() {
       }
     }
     setStudents(updated);
+
+    // Sync group membership if assigned
+    if (assignedGroupId) {
+      setGroups(prevGroups => prevGroups.map(g => {
+        if (g.id === assignedGroupId) {
+          if (!g.studentIds.includes(savedStudent.id)) {
+            return { ...g, studentIds: [...g.studentIds, savedStudent.id] };
+          }
+          return g;
+        } else {
+          // If moving between single group assignment
+          return { ...g, studentIds: g.studentIds.filter(id => id !== savedStudent.id) };
+        }
+      }));
+    }
   };
 
   const handleDeleteStudent = (studentId: string) => {
@@ -216,6 +288,11 @@ export default function App() {
         message: `Are you sure you want to permanently remove ${student.name} from Sir Ali Preparations?`,
         onConfirm: () => {
           setStudents(prev => prev.filter(s => s.id !== studentId));
+          // Remove from groups as well
+          setGroups(prev => prev.map(g => ({
+            ...g,
+            studentIds: g.studentIds.filter(id => id !== studentId)
+          })));
           showToast(`Removed ${student.name} from active roster.`);
           setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         }
@@ -231,7 +308,183 @@ export default function App() {
     });
   };
 
-  // Handlers for Quick Attendance
+  // Group Management Handlers
+  const handleSaveGroup = (group: StudentGroup) => {
+    requireUnlock('Enter PIN to create/edit group batch', () => {
+      setGroups(prev => {
+        const idx = prev.findIndex(g => g.id === group.id);
+        if (idx >= 0) {
+          const clone = [...prev];
+          clone[idx] = group;
+          return clone;
+        }
+        return [...prev, group];
+      });
+      showToast(`Saved Group Batch: ${group.name}`);
+    });
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    requireUnlock('Enter PIN to delete group batch', () => {
+      setGroups(prev => prev.filter(g => g.id !== groupId));
+      showToast('Group batch removed.');
+    });
+  };
+
+  const handleAssignStudentsToGroup = (groupId: string, studentIds: string[]) => {
+    requireUnlock('Enter PIN to assign students to group', () => {
+      setGroups(prev => prev.map(g => {
+        if (g.id === groupId) {
+          const set = new Set([...g.studentIds, ...studentIds]);
+          return { ...g, studentIds: Array.from(set) };
+        }
+        return g;
+      }));
+      showToast(`Assigned ${studentIds.length} student(s) to group.`);
+    });
+  };
+
+  const handleGroupBatchAttendance = (groupId: string, status: 'present' | 'absent', date: string) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group || group.studentIds.length === 0) return;
+
+    requireUnlock(`Enter PIN to mark 1-Click attendance for ${group.name}`, () => {
+      setAttendance(prev => {
+        const updated = [...prev];
+        group.studentIds.forEach(stId => {
+          const idx = updated.findIndex(a => a.studentId === stId && a.date === date);
+          if (idx >= 0) {
+            updated[idx] = { ...updated[idx], status };
+          } else {
+            updated.push({
+              id: `att-${Date.now()}-${stId}`,
+              studentId: stId,
+              date,
+              status,
+            });
+          }
+        });
+        return updated;
+      });
+      showToast(`1-Click Attendance logged: Marked ${group.studentIds.length} students as ${status.toUpperCase()}`);
+    });
+  };
+
+  const handleGroupBatchFee = (groupId: string, month: string, amount: number, dueDate: string) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group || group.studentIds.length === 0) return;
+
+    requireUnlock(`Enter PIN to generate 1-Click fee bills for ${group.name}`, () => {
+      setFees(prev => {
+        const newFees = [...prev];
+        group.studentIds.forEach(stId => {
+          const existing = newFees.find(f => f.studentId === stId && f.month === month);
+          if (!existing) {
+            newFees.push({
+              id: `fee-${Date.now()}-${stId}`,
+              studentId: stId,
+              month,
+              amount: amount > 0 ? amount : (students.find(s => s.id === stId)?.monthlyFee || 15000),
+              dueDate,
+              status: 'pending',
+            });
+          }
+        });
+        return newFees;
+      });
+      showToast(`1-Click Fee invoices generated for ${group.studentIds.length} students (${month})`);
+    });
+  };
+
+  const handleGroupBatchTest = (groupId: string, testTitle: string, totalMarks: number, date: string, subject: string) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group || group.studentIds.length === 0) return;
+
+    requireUnlock(`Enter PIN to schedule 1-Click test for ${group.name}`, () => {
+      setTestScores(prev => {
+        const newTests = [...prev];
+        group.studentIds.forEach(stId => {
+          newTests.push({
+            id: `test-${Date.now()}-${stId}`,
+            studentId: stId,
+            subject: subject || group.subject,
+            testTitle,
+            testDate: date,
+            maxMarks: totalMarks,
+            obtainedMarks: 0,
+            percentage: 0,
+            grade: 'Pending',
+            remarks: `Batch Test: ${group.name}`,
+          });
+        });
+        return newTests;
+      });
+      showToast(`1-Click Test scheduled for all ${group.studentIds.length} students in ${group.name}`);
+    });
+  };
+
+  const handleGroupBatchSyllabus = (groupId: string, subject: string, chapterTitle: string, notes: string) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    requireUnlock(`Enter PIN to assign 1-Click syllabus for ${group.name}`, () => {
+      setSyllabus(prev => {
+        let sub = prev.find(s => s.subject.toLowerCase() === subject.toLowerCase());
+        if (!sub) {
+          const newSub: SubjectSyllabus = {
+            id: `syl-${Date.now()}`,
+            subject,
+            grade: group.grade,
+            chapters: [
+              {
+                id: `chap-${Date.now()}`,
+                chapterNumber: 1,
+                title: chapterTitle,
+                topics: [
+                  {
+                    id: `top-${Date.now()}`,
+                    title: 'Key Concepts & Theory Review',
+                    status: 'in-progress',
+                    notes: notes || `Assigned to ${group.name}`,
+                  }
+                ]
+              }
+            ]
+          };
+          return [...prev, newSub];
+        }
+
+        const nextChapterNumber = sub.chapters.length + 1;
+        return prev.map(s => {
+          if (s.id === sub?.id) {
+            return {
+              ...s,
+              chapters: [
+                ...s.chapters,
+                {
+                  id: `chap-${Date.now()}`,
+                  chapterNumber: nextChapterNumber,
+                  title: chapterTitle,
+                  topics: [
+                    {
+                      id: `top-${Date.now()}`,
+                      title: 'Key Concepts & Theory Review',
+                      status: 'in-progress',
+                      notes: notes || `Assigned to ${group.name}`,
+                    }
+                  ]
+                }
+              ]
+            };
+          }
+          return s;
+        });
+      });
+      showToast(`1-Click Chapter '${chapterTitle}' assigned to syllabus (${subject})`);
+    });
+  };
+
+  // Quick Attendance
   const handleQuickMarkAttendance = (studentId: string, status: 'present' | 'absent') => {
     const perform = () => {
       const existingIndex = attendance.findIndex(a => a.studentId === studentId && a.date === todayDate);
@@ -266,7 +519,7 @@ export default function App() {
     });
   };
 
-  // Handlers for Syllabus
+  // Syllabus
   const handleUpdateSyllabus = (newSyllabus: SubjectSyllabus[]) => {
     requireUnlock('Enter PIN to modify syllabus progress', () => {
       setSyllabus(newSyllabus);
@@ -274,7 +527,7 @@ export default function App() {
     });
   };
 
-  // Handlers for Fees
+  // Fees
   const handleSaveFee = (savedFee: FeeRecord) => {
     const existingIdx = fees.findIndex(f => f.id === savedFee.id);
     let updated: FeeRecord[];
@@ -308,7 +561,7 @@ export default function App() {
     setIsReceiptOpen(true);
   };
 
-  // Handlers for Tests
+  // Tests
   const handleSaveTest = (savedTest: TestScore) => {
     setTestScores([savedTest, ...testScores]);
     showToast(`Logged test marks: ${savedTest.testTitle}`);
@@ -342,7 +595,7 @@ export default function App() {
     });
   };
 
-  // Handlers for Report Cards
+  // Report Cards
   const handleGenerateReportCard = (student: Student) => {
     setReportCardStudent(student);
     setIsReportCardOpen(true);
@@ -357,6 +610,7 @@ export default function App() {
         onConfirm: () => {
           resetToInitialSampleData();
           setStudents(getStoredStudents());
+          setGroups(getStoredGroups());
           setAttendance(getStoredAttendance());
           setTestScores(getStoredTests());
           setSyllabus(getStoredSyllabus());
@@ -402,9 +656,11 @@ export default function App() {
         onOpenAddTest={() => handleOpenAddTest()}
         onResetData={handleResetData}
         studentCounts={studentCounts}
+        groupCount={groups.length}
         isLocked={isLocked}
         onToggleLock={handleToggleLock}
         onOpenChangePin={handleOpenChangePin}
+        sheetsConfig={sheetsConfig}
       />
 
       {/* Main Content Area */}
@@ -435,10 +691,33 @@ export default function App() {
           />
         )}
 
+        {/* GROUPS & BATCHES TAB */}
+        {activeTab === 'groups' && (
+          <GroupsTab
+            groups={groups}
+            students={students}
+            attendance={attendance}
+            testScores={testScores}
+            fees={fees}
+            syllabus={syllabus}
+            todayDate={todayDate}
+            isLocked={isLocked}
+            onSaveGroup={handleSaveGroup}
+            onDeleteGroup={handleDeleteGroup}
+            onAssignStudentsToGroup={handleAssignStudentsToGroup}
+            onGroupBatchAttendance={handleGroupBatchAttendance}
+            onGroupBatchFee={handleGroupBatchFee}
+            onGroupBatchTest={handleGroupBatchTest}
+            onGroupBatchSyllabus={handleGroupBatchSyllabus}
+            onSelectStudent={(student) => setSelectedDetailStudent(student)}
+          />
+        )}
+
         {/* STUDENTS TAB */}
         {activeTab === 'students' && (
           <StudentsTab
             students={students}
+            groups={groups}
             attendance={attendance}
             testScores={testScores}
             fees={fees}
@@ -454,6 +733,7 @@ export default function App() {
             onDeleteStudent={handleDeleteStudent}
             onGenerateReportCard={handleGenerateReportCard}
             onRecordFeeForStudent={(student) => handleOpenRecordFee(student)}
+            onAssignStudentsToGroup={handleAssignStudentsToGroup}
           />
         )}
 
@@ -473,8 +753,11 @@ export default function App() {
         {activeTab === 'syllabus' && (
           <SyllabusTab
             syllabusList={syllabus}
+            students={students}
             onUpdateSyllabus={handleUpdateSyllabus}
+            onUpdateStudents={(updatedStudents) => setStudents(updatedStudents)}
             todayDate={todayDate}
+            onSelectStudent={(student) => setSelectedDetailStudent(student)}
           />
         )}
 
@@ -501,6 +784,24 @@ export default function App() {
             isLocked={isLocked}
             onOpenRecordFee={handleOpenRecordFee}
             onOpenReceiptModal={handleOpenReceiptModal}
+          />
+        )}
+
+        {/* GOOGLE SHEETS LIVE DATABASE TAB */}
+        {activeTab === 'sheets' && (
+          <GoogleSheetsTab
+            students={students}
+            groups={groups}
+            attendance={attendance}
+            testScores={testScores}
+            syllabus={syllabus}
+            fees={fees}
+            sheetsConfig={sheetsConfig}
+            onUpdateConfig={handleUpdateSheetsConfig}
+            onApplyPulledData={handleApplyPulledData}
+            showToast={showToast}
+            currentUser={currentUser}
+            onUserAuthChange={(user) => setCurrentUser(user)}
           />
         )}
 
@@ -531,6 +832,7 @@ export default function App() {
         onUpdateAttendance={handleUpdateAttendance}
         onUpdateTestScores={handleUpdateTestScores}
         onUpdateSyllabus={handleUpdateSyllabus}
+        onUpdateStudents={(updatedStudents) => setStudents(updatedStudents)}
         onUpdateFees={handleUpdateFees}
         onEditStudent={handleEditStudent}
         onDeleteStudent={handleDeleteStudent}
@@ -550,6 +852,7 @@ export default function App() {
         }}
         onSave={handleSaveStudent}
         studentToEdit={studentToEdit}
+        groups={groups}
       />
 
       <RecordFeeModal

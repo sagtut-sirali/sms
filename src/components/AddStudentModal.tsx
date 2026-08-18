@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, BookOpen, Calendar, Phone, MapPin, DollarSign, Home, Laptop } from 'lucide-react';
-import { Student, TuitionMode } from '../types';
+import { X, User, BookOpen, Calendar, Phone, MapPin, DollarSign, Home, Laptop, Clock, CalendarCheck, Check, Layers } from 'lucide-react';
+import { Student, TuitionMode, StudentGroup } from '../types';
 
 interface AddStudentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (student: Student) => void;
+  onSave: (student: Student, assignedGroupId?: string) => void;
   studentToEdit?: Student | null;
+  groups?: StudentGroup[];
 }
 
 const AVATAR_COLORS = [
@@ -19,11 +20,63 @@ const AVATAR_COLORS = [
   'bg-indigo-600',
 ];
 
+export const GRADE_OPTIONS = [
+  '8th / VIII',
+  '9th / IX',
+  '10th / X',
+  "O'levels Final",
+  '11th / XI year / AS / A1',
+  '12th / XII year / A2',
+];
+
+export const BOARD_OPTIONS = [
+  'Cambridge - CAIE',
+  'Edexcel (Pearson)',
+  'Karachi Board',
+  'Federal Board',
+  'AKU-EB',
+  'Punjab Board',
+];
+
+export const TIME_SLOT_OPTIONS = [
+  '03:00 PM - 04:00 PM',
+  '03:30 PM - 05:00 PM',
+  '04:00 PM - 05:00 PM',
+  '04:00 PM - 05:30 PM',
+  '04:30 PM - 06:00 PM',
+  '05:00 PM - 06:00 PM',
+  '05:00 PM - 06:30 PM',
+  '05:30 PM - 07:00 PM',
+  '06:00 PM - 07:00 PM',
+  '06:00 PM - 07:15 PM',
+  '06:00 PM - 07:30 PM',
+  '06:30 PM - 08:00 PM',
+  '07:00 PM - 08:00 PM',
+  '07:00 PM - 08:30 PM',
+  '07:30 PM - 09:00 PM',
+  '08:00 PM - 09:00 PM',
+  '08:00 PM - 09:30 PM',
+  '08:30 PM - 10:00 PM',
+  '09:00 PM - 10:00 PM',
+  'Flexible / Custom Time',
+];
+
+export const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+export const DAY_PRESETS = [
+  { label: 'MWF', days: ['Mon', 'Wed', 'Fri'] },
+  { label: 'TTS', days: ['Tue', 'Thu', 'Sat'] },
+  { label: 'Mon-Fri', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
+  { label: 'Weekend', days: ['Sat', 'Sun'] },
+  { label: 'All Days', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+];
+
 export const AddStudentModal: React.FC<AddStudentModalProps> = ({
   isOpen,
   onClose,
   onSave,
   studentToEdit,
+  groups = [],
 }) => {
   const [name, setName] = useState('');
   const [rollNo, setRollNo] = useState('');
@@ -31,16 +84,71 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [grade, setGrade] = useState('F.Sc Part 1 (Pre-Engineering)');
-  const [board, setBoard] = useState('Federal Board (FBISE)');
+  const [grade, setGrade] = useState<string>('9th / IX');
+  const [board, setBoard] = useState<string>('Federal Board');
   const [tuitionMode, setTuitionMode] = useState<TuitionMode>('home');
   const [addressOrLocation, setAddressOrLocation] = useState('');
-  const [timeSlot, setTimeSlot] = useState('');
+  const [selectedTime, setSelectedTime] = useState('04:00 PM - 05:30 PM');
+  const [customTime, setCustomTime] = useState('');
+  const [selectedDays, setSelectedDays] = useState<string[]>(['Mon', 'Wed', 'Fri']);
   const [subjectsInput, setSubjectsInput] = useState('Physics, Mathematics');
   const [monthlyFee, setMonthlyFee] = useState(15000);
   const [feeDueDay, setFeeDueDay] = useState(5);
   const [notes, setNotes] = useState('');
   const [avatarBg, setAvatarBg] = useState('bg-blue-600');
+  const [assignedGroupId, setAssignedGroupId] = useState('');
+
+  // Helper to parse legacy timeSlot string (e.g. "4:00 PM - 5:30 PM (Mon, Wed, Fri)")
+  const parseTimeAndDays = (slotString?: string) => {
+    if (!slotString) {
+      return { time: '04:00 PM - 05:30 PM', custom: '', days: ['Mon', 'Wed', 'Fri'] };
+    }
+
+    const match = slotString.match(/^(.*?)(?:\s*\((.*?)\))?$/);
+    const rawTime = match && match[1] ? match[1].trim() : slotString;
+    const rawDays = match && match[2] ? match[2].trim() : '';
+
+    let days: string[] = [];
+    if (rawDays) {
+      if (rawDays.toLowerCase().includes('daily') || rawDays.toLowerCase().includes('mon-fri')) {
+        days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+      } else if (rawDays.toLowerCase().includes('weekend')) {
+        days = ['Sat', 'Sun'];
+      } else {
+        days = rawDays.split(',').map((d) => d.trim()).filter((d) => WEEK_DAYS.includes(d));
+      }
+    }
+
+    if (days.length === 0) {
+      days = ['Mon', 'Wed', 'Fri'];
+    }
+
+    const matchedTimeOption = TIME_SLOT_OPTIONS.find((t) => t.toLowerCase() === rawTime.toLowerCase());
+    if (matchedTimeOption) {
+      return { time: matchedTimeOption, custom: '', days };
+    } else if (rawTime) {
+      return { time: 'Flexible / Custom Time', custom: rawTime, days };
+    }
+
+    return { time: '04:00 PM - 05:30 PM', custom: '', days };
+  };
+
+  const handleToggleDay = (day: string) => {
+    if (selectedDays.includes(day)) {
+      if (selectedDays.length === 1) return; // Keep at least one day
+      setSelectedDays(selectedDays.filter((d) => d !== day));
+    } else {
+      // Keep sorted by week order
+      const newDays = [...selectedDays, day].sort(
+        (a, b) => WEEK_DAYS.indexOf(a) - WEEK_DAYS.indexOf(b)
+      );
+      setSelectedDays(newDays);
+    }
+  };
+
+  const handleApplyPreset = (presetDays: string[]) => {
+    setSelectedDays(presetDays);
+  };
 
   useEffect(() => {
     if (studentToEdit) {
@@ -54,12 +162,20 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
       setBoard(studentToEdit.board);
       setTuitionMode(studentToEdit.tuitionMode);
       setAddressOrLocation(studentToEdit.addressOrLocation || '');
-      setTimeSlot(studentToEdit.timeSlot);
+      
+      const parsed = parseTimeAndDays(studentToEdit.timeSlot);
+      setSelectedTime(parsed.time);
+      setCustomTime(parsed.custom);
+      setSelectedDays(parsed.days);
+
       setSubjectsInput(studentToEdit.subjects.join(', '));
       setMonthlyFee(studentToEdit.monthlyFee);
       setFeeDueDay(studentToEdit.feeDueDay || 5);
       setNotes(studentToEdit.notes || '');
       setAvatarBg(studentToEdit.avatarBg || 'bg-blue-600');
+
+      const existingGroup = groups.find((g) => g.studentIds.includes(studentToEdit.id));
+      setAssignedGroupId(existingGroup ? existingGroup.id : '');
     } else {
       // Default new student values
       setName('');
@@ -68,18 +184,21 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
       setParentName('');
       setParentPhone('');
       setEmail('');
-      setGrade('F.Sc Part 1 (Pre-Engineering)');
-      setBoard('Federal Board (FBISE)');
+      setGrade('9th / IX');
+      setBoard('Federal Board');
       setTuitionMode('home');
       setAddressOrLocation('');
-      setTimeSlot('4:00 PM - 5:30 PM (Mon, Wed, Fri)');
+      setSelectedTime('04:00 PM - 05:30 PM');
+      setCustomTime('');
+      setSelectedDays(['Mon', 'Wed', 'Fri']);
       setSubjectsInput('Physics, Mathematics');
       setMonthlyFee(18000);
       setFeeDueDay(5);
       setNotes('');
       setAvatarBg(AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]);
+      setAssignedGroupId('');
     }
-  }, [studentToEdit, isOpen]);
+  }, [studentToEdit, isOpen, groups]);
 
   if (!isOpen) return null;
 
@@ -91,6 +210,13 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
       .split(',')
       .map(s => s.trim())
       .filter(Boolean);
+
+    // Formatted time slot string
+    const finalTime = selectedTime === 'Flexible / Custom Time' && customTime.trim()
+      ? customTime.trim()
+      : selectedTime;
+    const finalDaysStr = selectedDays.length > 0 ? `(${selectedDays.join(', ')})` : '';
+    const formattedTimeSlot = `${finalTime} ${finalDaysStr}`.trim();
 
     const savedStudent: Student = {
       id: studentToEdit ? studentToEdit.id : `std-${Date.now()}`,
@@ -104,7 +230,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
       board,
       tuitionMode,
       addressOrLocation: addressOrLocation.trim() || undefined,
-      timeSlot: timeSlot.trim() || 'Flexible Time',
+      timeSlot: formattedTimeSlot || 'Flexible Time',
       subjects: subjects.length > 0 ? subjects : ['General'],
       monthlyFee: Number(monthlyFee) || 0,
       feeDueDay: Number(feeDueDay) || 5,
@@ -114,7 +240,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
       isActive: true,
     };
 
-    onSave(savedStudent);
+    onSave(savedStudent, assignedGroupId || undefined);
     onClose();
   };
 
@@ -205,56 +331,155 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
             <div>
               <label className="block font-semibold text-[#2D3329] mb-1">Grade / Class Level</label>
               <select
+                id="enroll-student-grade-select"
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
+                className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652] cursor-pointer font-medium"
               >
-                <option value="Class 9 (Matric)">Class 9 (Matric)</option>
-                <option value="Class 10 (Matric)">Class 10 (Matric)</option>
-                <option value="F.Sc Part 1 (Pre-Engineering)">F.Sc Part 1 (Pre-Engineering)</option>
-                <option value="F.Sc Part 1 (Pre-Medical)">F.Sc Part 1 (Pre-Medical)</option>
-                <option value="F.Sc Part 2 (Pre-Engineering)">F.Sc Part 2 (Pre-Engineering)</option>
-                <option value="F.Sc Part 2 (Pre-Medical)">F.Sc Part 2 (Pre-Medical)</option>
-                <option value="O Level (Cambridge IGCSE)">O Level (Cambridge IGCSE)</option>
-                <option value="A Level (Cambridge)">A Level (Cambridge)</option>
-                <option value="Entry Test Prep (NET / MDCAT / ECAT)">Entry Test Prep (NET / MDCAT / ECAT)</option>
+                {grade && !GRADE_OPTIONS.includes(grade) && (
+                  <option value={grade}>{grade}</option>
+                )}
+                {GRADE_OPTIONS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="block font-semibold text-[#2D3329] mb-1">Exam Board / System</label>
-              <input
-                type="text"
-                placeholder="e.g. CAIE / Karachi Board / Federal Board / AKU-EB"
+              <select
+                id="enroll-student-board-select"
                 value={board}
                 onChange={(e) => setBoard(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
-              />
+                className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652] cursor-pointer font-medium"
+              >
+                {board && !BOARD_OPTIONS.includes(board) && (
+                  <option value={board}>{board}</option>
+                )}
+                {BOARD_OPTIONS.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Row 3: Subjects & Time Slot */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block font-semibold text-[#2D3329] mb-1">Enrolled Subjects (comma separated)</label>
-              <input
-                type="text"
-                placeholder="Physics, Mathematics, Chemistry"
-                value={subjectsInput}
-                onChange={(e) => setSubjectsInput(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
-              />
+          {/* Row 3: Enrolled Subjects */}
+          <div>
+            <label className="block font-semibold text-[#2D3329] mb-1">Enrolled Subjects (comma separated)</label>
+            <input
+              type="text"
+              placeholder="Physics, Mathematics, Chemistry"
+              value={subjectsInput}
+              onChange={(e) => setSubjectsInput(e.target.value)}
+              className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
+            />
+          </div>
+
+          {/* Row 4: Class Time Slot (Dropdown) & Days Selection (Multi-Select) */}
+          <div className="bg-[#FAFBF9] p-4 rounded-2xl border border-[#E0E4D9] space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#5C6652]" />
+                <span className="font-semibold text-[#2D3329] text-sm">Class Schedule (Time Slot & Days)</span>
+              </div>
+              <span className="text-xs text-[#707969] bg-white px-2.5 py-1 rounded-full border border-[#E0E4D9] font-mono">
+                {selectedTime === 'Flexible / Custom Time' && customTime
+                  ? customTime
+                  : selectedTime}{' '}
+                ({selectedDays.join(', ')})
+              </span>
             </div>
 
-            <div>
-              <label className="block font-semibold text-[#2D3329] mb-1">Class Time Slot / Days</label>
-              <input
-                type="text"
-                placeholder="e.g. 5:00 PM - 6:30 PM (Mon, Wed, Fri)"
-                value={timeSlot}
-                onChange={(e) => setTimeSlot(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-[#42473E] mb-1">
+                  Class Time Slot (Dropdown)
+                </label>
+                <select
+                  id="enroll-student-time-select"
+                  value={selectedTime}
+                  onChange={(e) => setSelectedTime(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652] cursor-pointer text-sm font-medium"
+                >
+                  {TIME_SLOT_OPTIONS.map((slot) => (
+                    <option key={slot} value={slot}>
+                      {slot}
+                    </option>
+                  ))}
+                </select>
+                {selectedTime === 'Flexible / Custom Time' && (
+                  <input
+                    type="text"
+                    placeholder="Enter custom timing (e.g. 10:30 AM - 12:00 PM)"
+                    value={customTime}
+                    onChange={(e) => setCustomTime(e.target.value)}
+                    className="w-full mt-2 px-3 py-1.5 bg-white border border-[#E0E4D9] text-[#2D3329] rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
+                  />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-[#42473E]">
+                    Class Days (Select Multiple)
+                  </label>
+                  <span className="text-[11px] text-[#707969]">
+                    {selectedDays.length} day{selectedDays.length === 1 ? '' : 's'} selected
+                  </span>
+                </div>
+
+                {/* Day toggle buttons */}
+                <div className="grid grid-cols-7 gap-1">
+                  {WEEK_DAYS.map((day) => {
+                    const isSelected = selectedDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => handleToggleDay(day)}
+                        className={`py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#3A4035] text-white border-[#3A4035] shadow-xs'
+                            : 'bg-white text-[#5C6652] border-[#E0E4D9] hover:bg-[#F0F2EB]'
+                        }`}
+                        title={`Toggle ${day}`}
+                      >
+                        <span>{day}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span className="text-[10px] uppercase font-bold text-[#707969] tracking-wider">
+                    Presets:
+                  </span>
+                  {DAY_PRESETS.map((preset) => {
+                    const isActive =
+                      preset.days.length === selectedDays.length &&
+                      preset.days.every((d) => selectedDays.includes(d));
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => handleApplyPreset(preset.days)}
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border transition cursor-pointer ${
+                          isActive
+                            ? 'bg-[#5C6652] text-white border-[#5C6652]'
+                            : 'bg-white text-[#42473E] border-[#E0E4D9] hover:bg-[#EAEFE5]'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -328,6 +553,29 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({
               className="w-full px-3 py-2 bg-[#F7F8F3] border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
             />
           </div>
+
+          {/* Group / Batch Assignment */}
+          {groups.length > 0 && (
+            <div>
+              <label className="block font-semibold text-[#2D3329] mb-1 flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-[#5C6652]" />
+                <span>Assign to Tuition Group / Batch</span>
+                <span className="text-xs font-normal text-[#707969]">(Optional)</span>
+              </label>
+              <select
+                value={assignedGroupId}
+                onChange={(e) => setAssignedGroupId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-[#E0E4D9] text-[#2D3329] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5C6652]"
+              >
+                <option value="">-- No Group / Individual Student --</option>
+                {groups.map((grp) => (
+                  <option key={grp.id} value={grp.id}>
+                    {grp.name} ({grp.subject} - {grp.grade}) [{grp.studentIds.length} students]
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Teacher Notes */}
           <div>
